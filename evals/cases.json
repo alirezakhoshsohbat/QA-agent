@@ -1,0 +1,49 @@
+{
+  "cases": [
+    {
+      "name": "auth-login-offline",
+      "feature": "fixtures/auth_login.feature",
+      "checklist": [
+        { "id": "AC-1", "layer": "bff", "summary": "successful login issues token cookies" },
+        { "id": "AC-2", "layer": "bff", "summary": "invalid password rejected" },
+        { "id": "AC-3", "layer": "bff", "summary": "refresh rotates token" },
+        { "id": "AC-4", "layer": "bff", "summary": "logout clears cookies" }
+      ],
+      "expect": {
+        "require_no_blocking": true,
+        "require_full_coverage": true,
+        "min_scenarios": 4,
+        "min_criteria": 4,
+        "max_quality_warnings": 0,
+        "must_match": ["POST /api/auth/login", "@acceptance-AC-1", "401"],
+        "must_not_match": ["works correctly", "expected outcome"]
+      }
+    },
+    {
+      "name": "search-pane-multi-layer-offline",
+      "feature": "fixtures/search_pane_sync.feature",
+      "checklist": [
+        { "id": "E-1", "layer": "frontend", "summary": "init renders agent-listed chips" },
+        { "id": "B-1", "layer": "bff", "summary": "send forwards content only" }
+      ],
+      "expect": {
+        "require_no_blocking": true,
+        "require_full_coverage": true,
+        "min_scenarios": 2,
+        "min_criteria": 2,
+        "max_quality_warnings": 0,
+        "must_match": ["@layer-frontend", "@layer-bff", "/api/bot/send-message"],
+        "must_not_match": ["BotMessageData\\.filters", "\"priceRange\"\\s*:\\s*\"[0-9-]+\""]
+      }
+    },
+    {
+      "name": "auth-login-live",
+      "query": "راجب احراز هویت و لاگین کاربر تست کیس بساز",
+      "expect": {
+        "require_no_blocking": true,
+        "min_scenarios": 4,
+        "must_match": ["@acceptance-"]
+      }
+    }
+  ]
+}

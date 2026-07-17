@@ -1,0 +1,281 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any
+
+from langchain.chat_models import init_chat_model
+from langchain_core.language_models.chat_models import BaseChatModel
+
+from qa_agent.config import Settings, get_settings
+
+
+@dataclass(frozen=True)
+class ProviderConfig:
+    base_url: str | None
+    api_key: str
+    model_provider: str = "openai"
+
+
+PROVIDER_ALIASES: dict[str, str] = {
+    "kimi": "moonshot",
+    "glm": "zhipu",
+    "z-ai": "zhipu",
+}
+
+
+def _first_non_empty(*values: str | None) -> str | None:
+    for value in values:
+        if value and str(value).strip():
+            return str(value).strip()
+    return None
+
+
+def strip_router_prefix(model_ref: str) -> str:
+    """Return plain model slug (e.g. openai/gpt-4.1)."""
+    if model_ref.lower().startswith("router:"):
+        return model_ref.split(":", 1)[1]
+    return model_ref
+
+
+def parse_model_ref(model_ref: str) -> tuple[str, str]:
+    """Parse 'provider:model' or plain 'model'."""
+    if ":" in model_ref and not model_ref.startswith(("http://", "https://")):
+        prefix, rest = model_ref.split(":", 1)
+        if prefix.lower() in {"openai", "router", "kimi", "moonshot", "glm", "zhipu", "openrouter", "z-ai"}:
+            provider = PROVIDER_ALIASES.get(prefix.lower(), prefix.lower())
+            return provider, rest
+    return "openai", model_ref
+
+
+def resolve_model_ref(settings: Settings, role: str) -> str:
+    """Resolve model name for a role.
+
+    Roles: research, generate, plus optional tiers nano (falls back to
+    research) and pro (falls back to generate).
+    """
+    if role == "nano" and settings.qa_agent_nano_model.strip():
+        return settings.qa_agent_nano_model.strip()
+    if role == "pro" and settings.qa_agent_pro_model.strip():
+        return settings.qa_agent_pro_model.strip()
+    base_role = "research" if role in ("research", "nano") else "generate"
+
+    if settings.uses_router():
+        return (
+            settings.qa_agent_research_model
+            if base_role == "research"
+            else settings.qa_agent_generate_model
+        )
+
+    profile = settings.qa_agent_model_profile.lower()
+    if profile == "custom":
+        return (
+            settings.qa_agent_research_model
+            if base_role == "research"
+            else settings.qa_agent_generate_model
+        )
+
+    presets = settings.model_profile_presets()
+    if profile not in presets:
+        raise ValueError(
+            f"Unknown model profile '{profile}'. "
+            f"Valid: {', '.join(sorted(presets.keys()))}, custom, router"
+        )
+    return presets[profile][base_role]
+
+
+def resolve_provider(settings: Settings, provider: str) -> ProviderConfig:
+    provider = PROVIDER_ALIASES.get(provider, provider)
+    global_base = _first_non_empty(settings.llm_base_url)
+    global_key = _first_non_empty(settings.llm_api_key)
+
+    if provider == "router":
+        return ProviderConfig(base_url=global_base, api_key=global_key or "")
+
+    if provider == "openai":
+        return ProviderConfig(
+            base_url=_first_non_empty(settings.openai_base_url, global_base),
+            api_key=_first_non_empty(settings.openai_api_key, global_key) or "",
+        )
+
+    if provider == "moonshot":
+        return ProviderConfig(
+            base_url=_first_non_empty(settings.moonshot_base_url, global_base),
+            api_key=_first_non_empty(settings.moonshot_api_key, global_key, settings.openai_api_key) or "",
+        )
+
+    if provider == "zhipu":
+        return ProviderConfig(
+            base_url=_first_non_empty(settings.zhipu_base_url, global_base),
+            api_key=_first_non_empty(settings.zhipu_api_key, global_key) or "",
+        )
+
+    if provider == "openrouter":
+        return ProviderConfig(
+            base_url=_first_non_empty(settings.openrouter_base_url, global_base),
+            api_key=_first_non_empty(settings.openrouter_api_key, global_key) or "",
+        )
+
+    raise ValueError(
+        f"Unknown model provider '{provider}'. "
+        "Supported: openai, router, kimi/moonshot, glm/zhipu, openrouter"
+    )
+
+
+def create_chat_model(
+    model_ref: str,
+    settings: Settings | None = None,
+    role: str | None = None,
+    **model_kwargs: Any,
+) -> BaseChatModel:
+    settings = settings or get_settings()
+
+    # Router mode: one base URL + one token, different model name per role
+    if settings.uses_router():
+        model_name = strip_router_prefix(model_ref)
+        base_url = _first_non_empty(
+            settings.role_base_url(role) if role else None,
+            settings.llm_base_url,
+        )
+        api_key = settings.llm_api_key
+
+        if not api_key:
+            raise ValueError("Router mode requires LLM_API_KEY in .env")
+        if not base_url:
+            raise ValueError("Router mode requires LLM_BASE_URL in .env")
+
+        return init_chat_model(
+            model=model_name,
+            model_provider="openai",
+            api_key=api_key,
+            base_url=base_url,
+            max_retries=settings.qa_agent_llm_max_retries,
+            # Emit token usage on the final chunk during streaming so cost
+            # tracking works on the SSE/astream_events path (OpenAI-compatible).
+            stream_usage=True,
+        )
+
+    provider, model_name = parse_model_ref(model_ref)
+    provider_cfg = resolve_provider(settings, provider)
+
+    effective_base_url = provider_cfg.base_url
+    if role:
+        role_url = settings.role_base_url(role)
+        if role_url:
+            effective_base_url = role_url
+
+    api_key = provider_cfg.api_key
+    if not api_key:
+        raise ValueError(
+            f"Missing API key for provider '{provider}'. "
+            "Set LLM_API_KEY, provider-specific key, or see .env.example."
+        )
+
+    kwargs: dict[str, Any] = {
+        "model": model_name,
+        "model_provider": provider_cfg.model_provider,
+        "api_key": api_key,
+        "max_retries": settings.qa_agent_llm_max_retries,
+    }
+    if effective_base_url:
+        kwargs["base_url"] = effective_base_url
+
+    # Only OpenAI-compatible models support stream_options.include_usage; other
+    # providers reject the kwarg, so scope it to the openai provider.
+    if provider_cfg.model_provider == "openai":
+        kwargs.setdefault("stream_usage", True)
+
+    return init_chat_model(**kwargs)
+
+
+def create_research_model(settings: Settings | None = None) -> BaseChatModel:
+    settings = settings or get_settings()
+    return create_chat_model(resolve_model_ref(settings, "research"), settings, role="research")
+
+
+def create_generate_model(settings: Settings | None = None) -> BaseChatModel:
+    settings = settings or get_settings()
+    return create_chat_model(resolve_model_ref(settings, "generate"), settings, role="generate")
+
+
+def create_nano_model(settings: Settings | None = None) -> BaseChatModel:
+    """Cheapest tier: query expansion, triage, reranking.
+
+    Side-calls must fail fast — a slow/unavailable nano model degrades to
+    heuristics at the call site, so no long retry backoff here.
+    """
+    settings = settings or get_settings()
+    return create_chat_model(
+        resolve_model_ref(settings, "nano"),
+        settings,
+        role="nano",
+        timeout=25,
+        max_retries=1,
+    )
+
+
+def create_pro_model(settings: Settings | None = None) -> BaseChatModel:
+    """Strongest tier: complex requests and blocked-write escalation."""
+    settings = settings or get_settings()
+    return create_chat_model(resolve_model_ref(settings, "pro"), settings, role="pro")
+
+
+def describe_model_endpoint(settings: Settings, role: str) -> dict[str, str | None]:
+    model_ref = resolve_model_ref(settings, role)
+
+    if settings.uses_router():
+        base_url = _first_non_empty(
+            settings.role_base_url(role),
+            settings.llm_base_url,
+        )
+        return {
+            "model_ref": model_ref,
+            "provider": "router",
+            "model": strip_router_prefix(model_ref),
+            "base_url": base_url or "(not set)",
+        }
+
+    provider, model_name = parse_model_ref(model_ref)
+    cfg = resolve_provider(settings, provider)
+    base_url = cfg.base_url
+    role_url = settings.role_base_url(role)
+    if role_url:
+        base_url = role_url
+    return {
+        "model_ref": model_ref,
+        "provider": provider,
+        "model": model_name,
+        "base_url": base_url or "(default OpenAI endpoint)",
+    }
+
+
+def validate_model_credentials(settings: Settings | None = None) -> list[str]:
+    settings = settings or get_settings()
+    missing: list[str] = []
+
+    if settings.uses_router():
+        if not settings.llm_api_key:
+            missing.append("LLM_API_KEY")
+        if not settings.llm_base_url:
+            missing.append("LLM_BASE_URL")
+        if not settings.qa_agent_research_model:
+            missing.append("QA_AGENT_RESEARCH_MODEL")
+        if not settings.qa_agent_generate_model:
+            missing.append("QA_AGENT_GENERATE_MODEL")
+        return missing
+
+    for role in ("research", "generate"):
+        model_ref = resolve_model_ref(settings, role)
+        provider, _ = parse_model_ref(model_ref)
+        cfg = resolve_provider(settings, provider)
+
+        if not cfg.api_key:
+            key_name = {
+                "openai": "OPENAI_API_KEY or LLM_API_KEY",
+                "moonshot": "MOONSHOT_API_KEY or LLM_API_KEY",
+                "zhipu": "ZHIPU_API_KEY or LLM_API_KEY",
+                "openrouter": "OPENROUTER_API_KEY or LLM_API_KEY",
+            }.get(provider, "LLM_API_KEY")
+            if key_name not in missing:
+                missing.append(key_name)
+
+    return missing

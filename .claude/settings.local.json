@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(QA_AGENT_QUERY_EXPANSION=0 QA_AGENT_TRIAGE=0 .venv/bin/python -m pytest -q)",
+      "Bash(.venv/bin/python -m pytest -q)",
+      "Bash(echo \"expansion-cache-exists=$?\")",
+      "Bash(.venv/bin/qa-agent models *)",
+      "Bash(QA_AGENT_QUERY_EXPANSION=0 .venv/bin/python -c ' *)",
+      "Bash(.venv/bin/python -c ' *)"
+    ]
+  }
+}

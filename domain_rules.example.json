@@ -1,0 +1,184 @@
+{
+  "name": "search-pane (example)",
+  "prompt_hint": "Common wire vocabulary for this domain: endpoints such as /api/bot/init and /api/bot/send-message; fields data.filters, search_filters, SearchCriteria, propertyType, priceRange, rooms, baths, municipalities; error codes VALIDATION_ERROR, UNAUTHORIZED, BOT_ACCOUNT_NOT_FOUND. Contract rules: priceRange must be an object with min/max (never a string bucket); a history/BotMessageData message must never carry filter values.",
+  "concrete_signals": [
+    "\\b(?:data|event)\\.filters\\b",
+    "\\bsearch_filters\\b",
+    "\\b(?:sanitizeSearchCriteriaFields|sortSearchPaneFields|updateCriteria|useSearchCriteria)\\b",
+    "\\bSearchPaneFilterId\\b",
+    "\\bSearchCriteria\\b",
+    "\\bBotMessageData\\b",
+    "\\b(?:send_text|propertyType|priceRange|rooms|baths|municipalities)\\b",
+    "\\bVALIDATION_ERROR\\b",
+    "\\b(?:UNAUTHORIZED|BOT_ACCOUNT_NOT_FOUND|BOT_SESSION_NOT_READY|BOT_UPSTREAM_ERROR)\\b",
+    "\\bSSE\\b",
+    "(?i)\\bprofile update\\b",
+    "(?i)\\bfilters with (?:unknown|invalid)\\b",
+    "(?i)\\b(?:unknown|invalid)\\s+IDs?\\b",
+    "(?i)\\bchat message\\b",
+    "\\bsend-message\\b",
+    "(?i)\\bupstream\\b"
+  ],
+  "domain_context_terms": [
+    "filters",
+    "search_filters",
+    "SearchPane",
+    "SearchCriteria",
+    "BFF",
+    "profile update",
+    "send-message"
+  ],
+  "forbidden_patterns": [
+    {
+      "label": "BotMessageData.filters property",
+      "pattern": "(?i)BotMessageData\\.filters\\b"
+    },
+    {
+      "label": "History message must not carry filter values",
+      "pattern": "(?i)(?:last|assistant)\\s+message\\s+containing\\s+filters\\s*\\{"
+    },
+    {
+      "label": "message containing filters with values",
+      "pattern": "(?i)message\\s+containing\\s+filters\\s*\\{[^}]*[\\\"'][\\w.]+[\\\"']\\s*:"
+    },
+    {
+      "label": "priceRange string bucket",
+      "message": "Forbidden wire shape: priceRange must be an object with min/max, not a string bucket",
+      "pattern": "(?i)[\\\"']priceRange[\\\"']\\s*:\\s*[\\\"'][\\d-]+[\\\"']"
+    }
+  ],
+  "vague_phrases": [
+    {
+      "label": "processes filters (alone)",
+      "pattern": "(?i)\\bprocesses the filters\\b(?!\\s*(array|list|from))"
+    }
+  ],
+  "outline_search_aliases": {
+    "search pane": [
+      "Search Pane",
+      "pane",
+      "search-pane",
+      "search-pane-sync",
+      "send-message"
+    ],
+    "search-pane": [
+      "Search Pane",
+      "pane",
+      "search-pane",
+      "search-pane-sync"
+    ]
+  },
+  "outline_doc_id_hints": {
+    "search pane": [
+      "f57d80cf-bdcf-4631-8a9d-c7440d7555a6",
+      "f8e00124-aeec-4903-85e0-c7977ea98669",
+      "0697e61e-b000-4252-ab05-7717e3cf1a1f"
+    ]
+  },
+  "layer_hints": [
+    {
+      "layer": "bff",
+      "terms": [
+        "bff",
+        "search-pane-sync",
+        "/api/bot"
+      ]
+    },
+    {
+      "layer": "frontend",
+      "terms": [
+        "frontend",
+        "agent sync",
+        "localstorage"
+      ]
+    },
+    {
+      "layer": "bff",
+      "terms": [
+        "send-message",
+        "profile"
+      ]
+    },
+    {
+      "layer": "e2e",
+      "terms": [
+        "e2e",
+        "end-to-end",
+        "cypress",
+        "playwright"
+      ]
+    },
+    {
+      "layer": "backend",
+      "terms": [
+        "backend",
+        "server",
+        "api contract"
+      ]
+    }
+  ],
+  "pr_search_aliases": {
+    "search pane": [
+      "search-pane",
+      "search-pane-sync",
+      "search-pane-filters",
+      "SearchPane",
+      "agent sync",
+      "searchpane"
+    ],
+    "search-pane": [
+      "search pane",
+      "search-pane-sync",
+      "search-pane-filters",
+      "SearchPane"
+    ]
+  },
+  "pr_path_markers": {
+    "search pane": [
+      "search-pane",
+      "searchpane",
+      "search_pane",
+      "search-pane-sync",
+      "search-pane-filters",
+      "searchpanefilter",
+      "docs/prd/agent/frontend/search-pane",
+      "docs/prd/agent/bff/search-pane",
+      "api/bot/search-pane",
+      "lib/bot/search-pane",
+      "pages/api/bot/send-message"
+    ],
+    "search-pane": [
+      "search-pane",
+      "search-pane-sync",
+      "search-pane-filters",
+      "docs/prd/agent/frontend/search-pane",
+      "docs/prd/agent/bff/search-pane"
+    ]
+  },
+  "pr_query_focus_patterns": [
+    "(?i)search\\s+pane",
+    "(?i)search-pane",
+    "(?i)login\\s+(?:flow|auth)",
+    "(?i)send-message",
+    "(?i)payment\\s+flow"
+  ],
+  "pr_false_positives": [
+    {
+      "when_all": [
+        "search",
+        "pane"
+      ],
+      "keep_if_contains": [
+        "search-pane",
+        "searchpane",
+        "search_pane"
+      ],
+      "drop_markers": [
+        "/api/v3/search/",
+        "pages/api/v3/search",
+        "/search/index.ts",
+        "/search/index.tsx"
+      ]
+    }
+  ]
+}

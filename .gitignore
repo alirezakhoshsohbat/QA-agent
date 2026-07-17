@@ -1,0 +1,16 @@
+.env
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.cache/
+corpus/
+graphify-out/
+output/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.cost.json

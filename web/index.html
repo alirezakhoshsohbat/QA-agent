@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0a0d15" />
+  <title>QA Agent — Gherkin Test Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/app.css" />
+</head>
+<body>
+  <div class="app">
+    <!-- ═══ Header ═══ -->
+    <header class="header">
+      <div class="header-start">
+        <button class="icon-btn header-menu" id="menuBtn" aria-label="منو">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+        </button>
+        <div class="brand">
+          <div class="brand-logo">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+          </div>
+          <div>
+            <div class="brand-name">QA Agent</div>
+            <div class="brand-tag">Gherkin Test Studio</div>
+          </div>
+        </div>
+      </div>
+      <div class="header-end">
+        <div class="status-pill" id="credStatus" title="وضعیت اتصال">
+          <span class="status-dot"></span>
+          <span class="status-text">در حال بررسی…</span>
+        </div>
+        <button class="btn" id="indexBtn" title="ایندکس منابع دانش">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-6.219-8.56"/><path d="M21 3v6h-6"/></svg>
+          <span class="label">Index</span>
+        </button>
+        <button class="icon-btn" id="settingsBtn" title="تنظیمات" aria-label="تنظیمات">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+        </button>
+        <button class="icon-btn" id="themeBtn" title="تغییر تم" aria-label="تغییر تم">
+          <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+          <svg class="icon-sun hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+        </button>
+        <button class="icon-btn" id="refreshBtn" title="بازخوانی" aria-label="بازخوانی">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <div class="body">
+      <!-- ═══ History rail ═══ -->
+      <aside class="rail" id="rail">
+        <div class="rail-top">
+          <button class="rail-newbtn" id="newBtn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            تست جدید
+          </button>
+          <div class="rail-search">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+            <input type="search" id="runSearch" placeholder="جست‌وجو در تاریخچه…" />
+          </div>
+        </div>
+        <div class="rail-list" id="runList">
+          <div class="rail-empty">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>
+            <p>هنوز تستی تولید نشده</p>
+          </div>
+        </div>
+        <div class="rail-foot">
+          <span class="rail-section-label">شروع سریع</span>
+          <div class="chips">
+            <button class="chip" data-prompt="برای login flow تست کیس بساز — happy path و edge cases">Login flow</button>
+            <button class="chip" data-prompt="search pane — happy path و edge cases">Search pane</button>
+            <button class="chip" data-prompt="payment checkout — card validation و خطاها">Payment</button>
+          </div>
+        </div>
+      </aside>
+      <div class="scrim" id="scrim"></div>
+
+      <!-- ═══ Main stage ═══ -->
+      <div class="stage">
+        <section class="output">
+          <div class="output-head">
+            <nav class="tabs" role="tablist">
+              <button class="tab active" data-tab="gherkin" role="tab">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                Gherkin
+                <span class="tab-badge hidden" id="gherkinBadge"></span>
+              </button>
+              <button class="tab" data-tab="coverage" role="tab">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                Coverage
+              </button>
+              <button class="tab" data-tab="activity" role="tab">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                Activity
+              </button>
+              <button class="tab" data-tab="sources" role="tab">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                Sources
+              </button>
+            </nav>
+            <div class="output-actions" id="gherkinActions">
+              <button class="mini-btn" id="copyBtn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+                <span class="label">Copy</span>
+              </button>
+              <button class="mini-btn" id="downloadBtn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                <span class="label">Download</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="output-body">
+            <!-- Gherkin -->
+            <div class="panel active" id="panel-gherkin">
+              <div class="code-wrap" id="gherkinWrap">
+                <div class="code-empty" id="gherkinEmpty">
+                  <div class="empty-card">
+                    <div class="empty-ic">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                    </div>
+                    <h3>آماده تولید تست‌کیس</h3>
+                    <p>درخواست QA خود را در کادر پایین بنویس و «تولید تست» را بزن. خروجی استاندارد Gherkin اینجا با هایلایت نمایش داده می‌شود.</p>
+                  </div>
+                </div>
+                <div class="code-view hidden" id="gherkinView">
+                  <div class="code-gutter" id="gherkinGutter"></div>
+                  <div class="code-body" id="gherkinBody"></div>
+                </div>
+              </div>
+              <div class="validation-ribbon hidden" id="validationRibbon"></div>
+            </div>
+
+            <!-- Coverage -->
+            <div class="panel" id="panel-coverage">
+              <div class="panel-scroll">
+                <div id="coverageSummary">
+                  <p class="empty-msg">پوشش acceptance criteria پس از تولید تست اینجا نمایش داده می‌شود.</p>
+                </div>
+                <div class="cov-section hidden" id="covMissingSection">
+                  <h4 class="section-label">تگ‌های جاافتاده <span class="count" id="covMissingCount">0</span></h4>
+                  <div class="chip-list" id="covMissingList"></div>
+                </div>
+                <div class="cov-section hidden" id="covWipSection">
+                  <h4 class="section-label">در دست انجام (WIP) <span class="count" id="covWipCount">0</span></h4>
+                  <div class="chip-list" id="covWipList"></div>
+                </div>
+                <div class="cov-section hidden" id="covQualitySection">
+                  <h4 class="section-label">هشدارهای کیفیت <span class="count" id="covQualityCount">0</span></h4>
+                  <ul class="warn-list" id="covQualityList"></ul>
+                </div>
+              </div>
+            </div>
+
+            <!-- Activity -->
+            <div class="panel" id="panel-activity">
+              <div class="activity-log" id="activityLog">
+                <div class="act-empty">
+                  <div class="act-empty-ic">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                  </div>
+                  <p>با شروع تولید، مراحل زنده‌ی کار Agent اینجا نمایش داده می‌شود.</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Sources -->
+            <div class="panel" id="panel-sources">
+              <div class="sources-grid" id="sourcesGrid">
+                <p class="empty-msg">منابع استفاده‌شده (مستندات Outline و PRها) اینجا نمایش داده می‌شوند.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Live progress strip -->
+        <div class="live-strip hidden" id="progressCard">
+          <div class="live-top">
+            <div class="live-phase">
+              <span class="spinner"></span>
+              <span id="progressPhase">آماده‌سازی…</span>
+              <span class="live-msg" id="progressMessage"></span>
+            </div>
+            <span class="live-pct" id="progressPct">0%</span>
+          </div>
+          <div class="track"><div class="bar" id="progressBar"></div></div>
+        </div>
+
+        <!-- Composer dock -->
+        <footer class="dock">
+          <label class="sr-only" for="queryInput">درخواست QA</label>
+          <div class="composer">
+            <textarea id="queryInput" rows="2" dir="auto"
+              placeholder="مثال: برای search pane تست کیس بساز — happy path و edge case ها"></textarea>
+            <div class="composer-bar">
+              <div class="composer-opts">
+                <label class="opt-group">
+                  Budget
+                  <select id="budgetInput">
+                    <option value="800">800</option>
+                    <option value="1500" selected>1500</option>
+                    <option value="3000">3000</option>
+                    <option value="5000">5000</option>
+                    <option value="8000">8000</option>
+                  </select>
+                </label>
+                <label class="switch" title="اجرای آزمایشی بدون نوشتن فایل">
+                  <input type="checkbox" id="dryRunToggle" />
+                  <span class="switch-ui"></span>
+                  Dry run
+                </label>
+              </div>
+              <button class="submit" id="generateBtn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                تولید تست
+                <span class="kbd">⌘↵</span>
+              </button>
+            </div>
+          </div>
+        </footer>
+      </div>
+
+      <!-- ═══ Inspector ═══ -->
+      <aside class="inspector">
+        <div class="card card--cost">
+          <h3 class="card-label">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+            هزینه این اجرا
+          </h3>
+          <div class="cost-hero">
+            <span class="cost-val" id="costUsd">$0.00</span>
+            <span class="cost-lbl">برآورد شده</span>
+          </div>
+          <div class="cost-grid">
+            <div class="cost-cell"><b id="costLlmIn">0</b><span>LLM in</span></div>
+            <div class="cost-cell"><b id="costLlmOut">0</b><span>LLM out</span></div>
+            <div class="cost-cell"><b id="costGraphify">0</b><span>Graphify</span></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3 class="card-label">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 15h3M1 9h3M1 15h3"/></svg>
+            مدل‌ها
+          </h3>
+          <div id="modelStats">
+            <div class="row"><span class="k">Profile</span><span class="v mono">—</span></div>
+            <div class="row"><span class="k">Research</span><span class="v mono">—</span></div>
+            <div class="row"><span class="k">Generate</span><span class="v mono">—</span></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3 class="card-label">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+            یکپارچه‌سازی‌ها
+          </h3>
+          <div class="integ-list" id="integrationStats">
+            <div class="integ-item"><span class="name">GitHub</span><span class="badge">—</span></div>
+            <div class="integ-item"><span class="name">Outline</span><span class="badge">—</span></div>
+            <div class="integ-item"><span class="name">Graph</span><span class="badge">—</span></div>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <!-- Index modal -->
+  <div class="overlay hidden" id="indexModal">
+    <div class="modal" role="dialog" aria-labelledby="indexModalTitle" aria-modal="true">
+      <div class="modal-head">
+        <h2 id="indexModalTitle">ایندکس منابع</h2>
+        <p>همگام‌سازی منابع دانش برای تولید تست دقیق‌تر</p>
+        <button class="modal-x" id="indexModalClose" aria-label="بستن">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <label class="check">
+          <input type="checkbox" id="idxOutline" />
+          <span class="check-box"></span>
+          <span class="txt"><strong>همگام‌سازی Outline</strong><small>مستندات تیم</small></span>
+        </label>
+        <label class="check">
+          <input type="checkbox" id="idxGithub" />
+          <span class="check-box"></span>
+          <span class="txt"><strong>Clone/pull گیت‌هاب</strong><small>کد منبع</small></span>
+        </label>
+        <label class="check">
+          <input type="checkbox" id="idxGraph" />
+          <span class="check-box"></span>
+          <span class="txt"><strong>ساخت گراف Graphify</strong><small>ممکن است زمان‌بر باشد</small></span>
+        </label>
+      </div>
+      <div class="modal-foot">
+        <button class="btn-ghost" id="indexCancel">انصراف</button>
+        <button class="btn-primary" id="indexStart">شروع ایندکس</button>
+      </div>
+      <div class="modal-result hidden" id="indexResult"></div>
+    </div>
+  </div>
+
+  <!-- Settings modal -->
+  <div class="overlay hidden" id="settingsModal">
+    <div class="modal modal--wide" role="dialog" aria-labelledby="settingsModalTitle" aria-modal="true">
+      <div class="modal-head">
+        <h2 id="settingsModalTitle">تنظیمات Agent</h2>
+        <p>اتصال، مدل‌ها، ساب‌ایجنت‌ها و پایداری — کلید خالی یعنی نگه‌داشتن مقدار فعلی</p>
+        <button class="modal-x" id="settingsModalClose" aria-label="بستن">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="modal-body settings-body" id="settingsForm">
+        <section class="settings-section">
+          <h3 class="settings-section-title">اتصال LLM</h3>
+          <div class="settings-grid">
+            <label class="field field--full">
+              <span class="field-label">Base URL <small>مثلاً https://api.avalai.ir/v1</small></span>
+              <input type="url" id="set_llm_base_url" class="field-input mono" placeholder="https://api.avalai.ir/v1" autocomplete="off" />
+            </label>
+            <label class="field field--full">
+              <span class="field-label">API Key <small id="set_llm_api_key_hint">خالی = بدون تغییر</small></span>
+              <input type="password" id="set_llm_api_key" class="field-input mono" placeholder="••••••••" autocomplete="new-password" />
+            </label>
+            <label class="field">
+              <span class="field-label">Research base URL <small>اختیاری</small></span>
+              <input type="url" id="set_research_base_url" class="field-input mono" placeholder="(همان LLM)" autocomplete="off" />
+            </label>
+            <label class="field">
+              <span class="field-label">Generate base URL <small>اختیاری</small></span>
+              <input type="url" id="set_generate_base_url" class="field-input mono" placeholder="(همان LLM)" autocomplete="off" />
+            </label>
+          </div>
+        </section>
+
+        <section class="settings-section">
+          <h3 class="settings-section-title">Outline و GitHub</h3>
+          <div class="settings-grid">
+            <label class="field field--full">
+              <span class="field-label">Outline base URL</span>
+              <input type="url" id="set_outline_base_url" class="field-input mono" placeholder="https://…/api" autocomplete="off" />
+            </label>
+            <label class="field field--full">
+              <span class="field-label">Outline API Key <small id="set_outline_api_key_hint">خالی = بدون تغییر</small></span>
+              <input type="password" id="set_outline_api_key" class="field-input mono" placeholder="••••••••" autocomplete="new-password" />
+            </label>
+            <label class="field field--full">
+              <span class="field-label">GitHub repos <small>owner/repo,owner/repo</small></span>
+              <input type="text" id="set_github_repos" class="field-input mono" placeholder="owner/web,owner/bot" autocomplete="off" />
+            </label>
+            <label class="field">
+              <span class="field-label">GitHub API URL</span>
+              <input type="url" id="set_github_base_url" class="field-input mono" placeholder="https://api.github.com" autocomplete="off" />
+            </label>
+            <label class="field">
+              <span class="field-label">GitHub Token <small id="set_github_token_hint">خالی = بدون تغییر</small></span>
+              <input type="password" id="set_github_token" class="field-input mono" placeholder="••••••••" autocomplete="new-password" />
+            </label>
+          </div>
+        </section>
+
+        <section class="settings-section">
+          <h3 class="settings-section-title">نردبان مدل</h3>
+          <div class="settings-grid">
+            <label class="field">
+              <span class="field-label">Nano <small>سبک‌ترین — expansion / triage</small></span>
+              <input type="text" id="set_nano_model" class="field-input mono" placeholder="gpt-4.1-nano" autocomplete="off" />
+            </label>
+            <label class="field">
+              <span class="field-label">Research <small>تحقیق + ابزارها</small></span>
+              <input type="text" id="set_research_model" class="field-input mono" placeholder="gpt-4.1-mini" autocomplete="off" />
+            </label>
+            <label class="field">
+              <span class="field-label">Generate <small>تولید Gherkin استاندارد</small></span>
+              <input type="text" id="set_generate_model" class="field-input mono" placeholder="gpt-4.1" autocomplete="off" />
+            </label>
+            <label class="field">
+              <span class="field-label">Pro <small>پیچیده / escalation</small></span>
+              <input type="text" id="set_pro_model" class="field-input mono" placeholder="gpt-5" autocomplete="off" />
+            </label>
+            <label class="field field--full">
+              <span class="field-label">Embedding <small>جستجوی هیبریدی — خالی = فقط BM25</small></span>
+              <input type="text" id="set_embedding_model" class="field-input mono" placeholder="text-embedding-3-small" autocomplete="off" />
+            </label>
+            <label class="field">
+              <span class="field-label">Embedding base URL <small>اختیاری</small></span>
+              <input type="url" id="set_embedding_base_url" class="field-input mono" placeholder="(همان LLM)" autocomplete="off" />
+            </label>
+            <label class="field">
+              <span class="field-label">Embedding API Key <small id="set_embedding_api_key_hint">خالی = بدون تغییر</small></span>
+              <input type="password" id="set_embedding_api_key" class="field-input mono" placeholder="••••••••" autocomplete="new-password" />
+            </label>
+          </div>
+        </section>
+
+        <section class="settings-section">
+          <h3 class="settings-section-title">ساب‌ایجنت‌ها</h3>
+          <div class="settings-toggles">
+            <label class="switch settings-switch">
+              <input type="checkbox" id="set_outline_subagent" />
+              <span class="switch-ui"></span>
+              <span class="switch-txt"><strong>outline-researcher</strong><small>تحقیق مستندات Outline و ساخت چک‌لیست acceptance</small></span>
+            </label>
+            <label class="switch settings-switch">
+              <input type="checkbox" id="set_github_subagent" />
+              <span class="switch-ui"></span>
+              <span class="switch-txt"><strong>github-researcher</strong><small>کشف PRها و خواندن diff برای تست wire-level</small></span>
+            </label>
+          </div>
+        </section>
+
+        <section class="settings-section">
+          <h3 class="settings-section-title">مسیریابی هوشمند</h3>
+          <div class="settings-toggles">
+            <label class="switch settings-switch">
+              <input type="checkbox" id="set_query_expansion" />
+              <span class="switch-ui"></span>
+              <span class="switch-txt"><strong>Query expansion</strong><small>بازنویسی کوئری فارسی به عبارت انگلیسی</small></span>
+            </label>
+            <label class="switch settings-switch">
+              <input type="checkbox" id="set_triage" />
+              <span class="switch-ui"></span>
+              <span class="switch-txt"><strong>Triage</strong><small>انتخاب مدل سبک یا حرفه‌ای بر اساس پیچیدگی</small></span>
+            </label>
+            <label class="switch settings-switch">
+              <input type="checkbox" id="set_escalation" />
+              <span class="switch-ui"></span>
+              <span class="switch-txt"><strong>Escalation</strong><small>اگر نوشتن بلاک شد، با مدل Pro دوباره تلاش کن</small></span>
+            </label>
+          </div>
+        </section>
+
+        <section class="settings-section">
+          <h3 class="settings-section-title">پایداری تا جواب درست</h3>
+          <div class="settings-grid settings-grid--3">
+            <label class="field">
+              <span class="field-label">Write attempts</span>
+              <input type="number" id="set_max_write_attempts" class="field-input" min="1" max="12" />
+            </label>
+            <label class="field">
+              <span class="field-label">Reprompts</span>
+              <input type="number" id="set_max_reprompts" class="field-input" min="1" max="20" />
+            </label>
+            <label class="field">
+              <span class="field-label">Quality refine</span>
+              <input type="number" id="set_quality_refine_rounds" class="field-input" min="0" max="6" />
+            </label>
+          </div>
+        </section>
+
+        <section class="settings-section">
+          <h3 class="settings-section-title">بودجه تحقیق</h3>
+          <div class="settings-grid settings-grid--3">
+            <label class="field">
+              <span class="field-label">Token budget</span>
+              <input type="number" id="set_token_budget" class="field-input" min="200" max="8000" step="100" />
+            </label>
+            <label class="field">
+              <span class="field-label">Max docs</span>
+              <input type="number" id="set_max_docs" class="field-input" min="1" max="20" />
+            </label>
+            <label class="field">
+              <span class="field-label">Max PRs (deep)</span>
+              <input type="number" id="set_max_prs_deep" class="field-input" min="1" max="15" />
+            </label>
+            <label class="field">
+              <span class="field-label">Max PRs</span>
+              <input type="number" id="set_max_prs" class="field-input" min="1" max="30" />
+            </label>
+            <label class="field">
+              <span class="field-label">PR scan limit</span>
+              <input type="number" id="set_pr_scan_limit" class="field-input" min="5" max="200" />
+            </label>
+            <label class="field">
+              <span class="field-label">Max diff lines</span>
+              <input type="number" id="set_max_diff_lines" class="field-input" min="50" max="5000" step="50" />
+            </label>
+          </div>
+        </section>
+      </div>
+      <div class="modal-foot">
+        <button class="btn-ghost" id="settingsCancel">انصراف</button>
+        <button class="btn-primary" id="settingsSave">ذخیره تنظیمات</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast-wrap" id="toastWrap"></div>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
