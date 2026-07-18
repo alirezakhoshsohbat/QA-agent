@@ -48,10 +48,14 @@ def test_custom_profile():
 
 
 def test_validate_credentials_hybrid():
-    settings = Settings(qa_agent_model_profile="hybrid")
-    settings.openai_api_key = ""
-    settings.moonshot_api_key = ""
-    settings.llm_api_key = ""
+    settings = Settings(
+        qa_agent_model_profile="hybrid",
+        openai_api_key="",
+        moonshot_api_key="",
+        llm_api_key="",
+        llm_base_url="",
+        openai_base_url="",
+    )
     missing = validate_model_credentials(settings)
     assert any("OPENAI_API_KEY" in m for m in missing)
     assert any("MOONSHOT_API_KEY" in m for m in missing)
@@ -124,5 +128,29 @@ def test_openai_base_url_over_provider_default():
 def test_validate_router_requires_base_url():
     settings = Settings(qa_agent_model_profile="router", llm_api_key="", llm_base_url="")
     missing = validate_model_credentials(settings)
-    assert "LLM_API_KEY" in missing
     assert "LLM_BASE_URL" in missing
+    assert "LLM_API_KEY" not in missing
+
+
+def test_validate_router_local_without_api_key():
+    """Blank API key + base URL = local OpenAI-compatible server."""
+    settings = Settings(
+        qa_agent_model_profile="router",
+        llm_api_key="",
+        llm_base_url="http://192.168.10.222:11434/v1",
+        qa_agent_research_model="qwen2.5",
+        qa_agent_generate_model="qwen2.5",
+    )
+    assert validate_model_credentials(settings) == []
+
+
+def test_validate_custom_local_without_api_key():
+    settings = Settings(
+        qa_agent_model_profile="custom",
+        qa_agent_research_model="openai:local-model",
+        qa_agent_generate_model="openai:local-model",
+        llm_base_url="http://127.0.0.1:11434/v1",
+        llm_api_key="",
+        openai_api_key="",
+    )
+    assert validate_model_credentials(settings) == []

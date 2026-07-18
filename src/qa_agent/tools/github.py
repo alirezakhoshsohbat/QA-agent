@@ -500,7 +500,7 @@ class GitHubClient:
         if self.cost:
             self.cost.record_github_call()
         url = f"{self.settings.github_base_url.rstrip('/')}/{path.lstrip('/')}"
-        with httpx.Client(timeout=60.0) as client:
+        with httpx.Client(timeout=60.0, verify=self.settings.httpx_verify) as client:
             response = client.get(url, headers=self._headers, params=params or {})
             response.raise_for_status()
             return response.json()

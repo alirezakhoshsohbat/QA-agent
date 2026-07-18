@@ -30,6 +30,63 @@ def _first_non_empty(*values: str | None) -> str | None:
     return None
 
 
+# OpenAI-compatible SDKs reject an empty api_key; local servers (Ollama, etc.)
+# ignore the value. Empty key + a *custom* base_url ⇒ local / no-auth endpoint.
+_LOCAL_API_KEY_PLACEHOLDER = "local"
+
+# Built-in cloud provider defaults still require a real API key.
+_CLOUD_DEFAULT_BASE_URLS = frozenset(
+    {
+        "https://api.moonshot.cn/v1",
+        "https://open.bigmodel.cn/api/paas/v4",
+        "https://openrouter.ai/api/v1",
+        "https://api.openai.com/v1",
+        "https://api.openai.com",
+    }
+)
+
+
+def allows_missing_api_key(base_url: str | None) -> bool:
+    """True when base_url is a custom/local endpoint (not a built-in cloud default)."""
+    url = (base_url or "").strip().rstrip("/")
+    if not url:
+        return False
+    return url.lower() not in {u.rstrip("/").lower() for u in _CLOUD_DEFAULT_BASE_URLS}
+
+
+def normalize_openai_base_url(base_url: str | None) -> str | None:
+    """Ensure OpenAI-compatible local servers expose the ``/v1`` prefix.
+
+    Ollama listens on ``:11434`` and serves the OpenAI API under ``/v1``.
+    Users often paste the bare host; without ``/v1`` chat/completions 404s
+    and side-calls (triage, expansion) silently fall back to heuristics.
+    """
+    url = (base_url or "").strip().rstrip("/")
+    if not url:
+        return None
+    lower = url.lower()
+    if lower.endswith("/v1") or lower.endswith("/api/v1") or lower.endswith("/v1/"):
+        return url.rstrip("/")
+    # Bare Ollama (or LM Studio-style) root — append /v1.
+    if ":11434" in lower or lower.rstrip("/").endswith("ollama"):
+        return f"{url}/v1"
+    return url
+
+
+def effective_api_key(api_key: str | None, base_url: str | None) -> str | None:
+    """Return a usable API key, or None when neither key nor local base URL exist.
+
+    No key + a custom base URL means a local / self-hosted OpenAI-compatible
+    server that does not require authentication.
+    """
+    key = (api_key or "").strip()
+    if key:
+        return key
+    if allows_missing_api_key(base_url):
+        return _LOCAL_API_KEY_PLACEHOLDER
+    return None
+
+
 def strip_router_prefix(model_ref: str) -> str:
     """Return plain model slug (e.g. openai/gpt-4.1)."""
     if model_ref.lower().startswith("router:"):
@@ -129,19 +186,25 @@ def create_chat_model(
 ) -> BaseChatModel:
     settings = settings or get_settings()
 
-    # Router mode: one base URL + one token, different model name per role
+    # Router mode: one base URL + optional token, different model name per role.
+    # Empty LLM_API_KEY means a local OpenAI-compatible server (no auth).
     if settings.uses_router():
         model_name = strip_router_prefix(model_ref)
-        base_url = _first_non_empty(
-            settings.role_base_url(role) if role else None,
-            settings.llm_base_url,
+        base_url = normalize_openai_base_url(
+            _first_non_empty(
+                settings.role_base_url(role) if role else None,
+                settings.llm_base_url,
+            )
         )
-        api_key = settings.llm_api_key
+        api_key = effective_api_key(settings.llm_api_key, base_url)
 
-        if not api_key:
-            raise ValueError("Router mode requires LLM_API_KEY in .env")
         if not base_url:
             raise ValueError("Router mode requires LLM_BASE_URL in .env")
+        if not api_key:
+            raise ValueError(
+                "Router mode needs LLM_API_KEY, or leave it blank only when "
+                "LLM_BASE_URL points at a local server."
+            )
 
         return init_chat_model(
             model=model_name,
@@ -162,12 +225,14 @@ def create_chat_model(
         role_url = settings.role_base_url(role)
         if role_url:
             effective_base_url = role_url
+    effective_base_url = normalize_openai_base_url(effective_base_url)
 
-    api_key = provider_cfg.api_key
+    api_key = effective_api_key(provider_cfg.api_key, effective_base_url)
     if not api_key:
         raise ValueError(
-            f"Missing API key for provider '{provider}'. "
-            "Set LLM_API_KEY, provider-specific key, or see .env.example."
+            f"Missing API key for provider '{provider}' (no custom base URL). "
+            "Set LLM_API_KEY, a provider key, or set a local LLM_BASE_URL and "
+            "leave the key blank."
         )
 
     kwargs: dict[str, Any] = {
@@ -223,9 +288,11 @@ def describe_model_endpoint(settings: Settings, role: str) -> dict[str, str | No
     model_ref = resolve_model_ref(settings, role)
 
     if settings.uses_router():
-        base_url = _first_non_empty(
-            settings.role_base_url(role),
-            settings.llm_base_url,
+        base_url = normalize_openai_base_url(
+            _first_non_empty(
+                settings.role_base_url(role),
+                settings.llm_base_url,
+            )
         )
         return {
             "model_ref": model_ref,
@@ -240,6 +307,7 @@ def describe_model_endpoint(settings: Settings, role: str) -> dict[str, str | No
     role_url = settings.role_base_url(role)
     if role_url:
         base_url = role_url
+    base_url = normalize_openai_base_url(base_url)
     return {
         "model_ref": model_ref,
         "provider": provider,
@@ -253,8 +321,7 @@ def validate_model_credentials(settings: Settings | None = None) -> list[str]:
     missing: list[str] = []
 
     if settings.uses_router():
-        if not settings.llm_api_key:
-            missing.append("LLM_API_KEY")
+        # Blank LLM_API_KEY is allowed: means a local OpenAI-compatible server.
         if not settings.llm_base_url:
             missing.append("LLM_BASE_URL")
         if not settings.qa_agent_research_model:
@@ -267,15 +334,19 @@ def validate_model_credentials(settings: Settings | None = None) -> list[str]:
         model_ref = resolve_model_ref(settings, role)
         provider, _ = parse_model_ref(model_ref)
         cfg = resolve_provider(settings, provider)
+        role_url = settings.role_base_url(role)
+        base_url = role_url or cfg.base_url
 
-        if not cfg.api_key:
-            key_name = {
-                "openai": "OPENAI_API_KEY or LLM_API_KEY",
-                "moonshot": "MOONSHOT_API_KEY or LLM_API_KEY",
-                "zhipu": "ZHIPU_API_KEY or LLM_API_KEY",
-                "openrouter": "OPENROUTER_API_KEY or LLM_API_KEY",
-            }.get(provider, "LLM_API_KEY")
-            if key_name not in missing:
-                missing.append(key_name)
+        if effective_api_key(cfg.api_key, base_url):
+            continue
+
+        key_name = {
+            "openai": "OPENAI_API_KEY or LLM_API_KEY",
+            "moonshot": "MOONSHOT_API_KEY or LLM_API_KEY",
+            "zhipu": "ZHIPU_API_KEY or LLM_API_KEY",
+            "openrouter": "OPENROUTER_API_KEY or LLM_API_KEY",
+        }.get(provider, "LLM_API_KEY")
+        if key_name not in missing:
+            missing.append(key_name)
 
     return missing

@@ -31,7 +31,7 @@ class OutlineClient:
         if self.cost:
             self.cost.record_outline_call()
         url = f"{self.settings.outline_base_url.rstrip('/')}/{method}"
-        with httpx.Client(timeout=30.0) as client:
+        with httpx.Client(timeout=30.0, verify=self.settings.httpx_verify) as client:
             response = client.post(url, headers=self._headers, json=payload)
             response.raise_for_status()
             return response.json()

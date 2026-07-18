@@ -263,6 +263,9 @@
           <div class="integ-list" id="integrationStats">
             <div class="integ-item"><span class="name">GitHub</span><span class="badge">—</span></div>
             <div class="integ-item"><span class="name">Outline</span><span class="badge">—</span></div>
+            <div class="integ-item"><span class="name">Confluence</span><span class="badge">—</span></div>
+            <div class="integ-item"><span class="name">Azure</span><span class="badge">—</span></div>
+            <div class="integ-item"><span class="name">OpenAPI</span><span class="badge">—</span></div>
             <div class="integ-item"><span class="name">Graph</span><span class="badge">—</span></div>
           </div>
         </div>
@@ -287,9 +290,24 @@
           <span class="txt"><strong>همگام‌سازی Outline</strong><small>مستندات تیم</small></span>
         </label>
         <label class="check">
+          <input type="checkbox" id="idxConfluence" />
+          <span class="check-box"></span>
+          <span class="txt"><strong>همگام‌سازی Confluence</strong><small>صفحات Atlassian</small></span>
+        </label>
+        <label class="check">
           <input type="checkbox" id="idxGithub" />
           <span class="check-box"></span>
           <span class="txt"><strong>Clone/pull گیت‌هاب</strong><small>کد منبع</small></span>
+        </label>
+        <label class="check">
+          <input type="checkbox" id="idxAzure" />
+          <span class="check-box"></span>
+          <span class="txt"><strong>Clone/pull Azure DevOps</strong><small>کد منبع Azure Repos</small></span>
+        </label>
+        <label class="check">
+          <input type="checkbox" id="idxOpenapi" />
+          <span class="check-box"></span>
+          <span class="txt"><strong>همگام‌سازی OpenAPI</strong><small>قرارداد API از spec ها</small></span>
         </label>
         <label class="check">
           <input type="checkbox" id="idxGraph" />
@@ -307,15 +325,294 @@
 
   <!-- Settings modal -->
   <div class="overlay hidden" id="settingsModal">
-    <div class="modal modal--wide" role="dialog" aria-labelledby="settingsModalTitle" aria-modal="true">
-      <div class="modal-head">
-        <h2 id="settingsModalTitle">تنظیمات Agent</h2>
-        <p>اتصال، مدل‌ها، ساب‌ایجنت‌ها و پایداری — کلید خالی یعنی نگه‌داشتن مقدار فعلی</p>
+    <div class="modal modal--wide modal--settings" role="dialog" aria-labelledby="settingsModalTitle" aria-modal="true">
+      <div class="modal-head modal-head--settings">
+        <span class="modal-head-ic" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+        </span>
+        <div class="modal-head-text">
+          <h2 id="settingsModalTitle">تنظیمات Agent</h2>
+          <p>هر کانکتور را جداگانه تنظیم کن — کلید خالی یعنی نگه‌داشتن مقدار فعلی</p>
+        </div>
         <button class="modal-x" id="settingsModalClose" aria-label="بستن">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
         </button>
       </div>
+
+      <nav class="settings-tabs" role="tablist">
+        <button class="settings-tab active" data-stab="connectors" role="tab">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+          کانکتورها
+        </button>
+        <button class="settings-tab" data-stab="models" role="tab">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/></svg>
+          مدل‌ها
+        </button>
+        <button class="settings-tab" data-stab="behavior" role="tab">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v6M12 17v6M4.2 4.2l4.3 4.3M15.5 15.5l4.3 4.3M1 12h6M17 12h6"/></svg>
+          رفتار و بودجه
+        </button>
+      </nav>
+
       <div class="modal-body settings-body" id="settingsForm">
+        <!-- ═══ Connectors tab ═══ -->
+        <div class="settings-tabpanel active" data-spanel="connectors">
+          <p class="connector-market-lead">کانکتورهای مورد نیاز را فعال کنید؛ تنظیمات هر کدام درست زیر همان کارت باز می‌شود.</p>
+          <div class="connector-grid">
+            <!-- Outline -->
+            <article class="connector-card" data-conn-card="outline">
+              <header class="connector-tile">
+                <div class="connector-id">
+                  <span class="connector-logo" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg></span>
+                  <div class="connector-meta">
+                    <div class="connector-name">Outline</div>
+                    <div class="connector-kind">مستندات تیم · outline-researcher</div>
+                  </div>
+                </div>
+                <div class="connector-tile-side">
+                  <span class="connector-status" data-conn-status="outline">—</span>
+                  <label class="connector-enable" title="فعال‌سازی کانکتور">
+                    <input type="checkbox" id="set_outline_subagent" data-conn-enable="outline" />
+                    <span class="switch-ui" aria-hidden="true"></span>
+                    <span class="connector-enable-label" data-on="فعال" data-off="غیرفعال">غیرفعال</span>
+                  </label>
+                </div>
+              </header>
+              <p class="connector-blurb">تحقیق مستندات Outline و ساخت چک‌لیست acceptance</p>
+              <div class="connector-config" hidden>
+                <div class="connector-config-bar">
+                  <span class="connector-config-title">تنظیمات اتصال</span>
+                  <button type="button" class="connector-test" data-conn-test="outline">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                    <span class="ctest-label">تست اتصال</span>
+                  </button>
+                </div>
+                <div class="connector-fields">
+                  <label class="field field--full">
+                    <span class="field-label">Base URL</span>
+                    <input type="url" id="set_outline_base_url" class="field-input mono" placeholder="https://…/api" autocomplete="off" />
+                  </label>
+                  <label class="field field--full">
+                    <span class="field-label">API Key <small id="set_outline_api_key_hint">خالی = بدون تغییر</small></span>
+                    <input type="password" id="set_outline_api_key" class="field-input mono" placeholder="••••••••" autocomplete="new-password" />
+                  </label>
+                </div>
+              </div>
+            </article>
+
+            <!-- Confluence -->
+            <article class="connector-card" data-conn-card="confluence">
+              <header class="connector-tile">
+                <div class="connector-id">
+                  <span class="connector-logo" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16c4-6 8 2 12-2M9 8c4-6 8 2 12-2"/></svg></span>
+                  <div class="connector-meta">
+                    <div class="connector-name">Confluence</div>
+                    <div class="connector-kind">مستندات Atlassian · confluence-researcher</div>
+                  </div>
+                </div>
+                <div class="connector-tile-side">
+                  <span class="connector-status" data-conn-status="confluence">—</span>
+                  <label class="connector-enable" title="فعال‌سازی کانکتور">
+                    <input type="checkbox" id="set_confluence_subagent" data-conn-enable="confluence" />
+                    <span class="switch-ui" aria-hidden="true"></span>
+                    <span class="connector-enable-label" data-on="فعال" data-off="غیرفعال">غیرفعال</span>
+                  </label>
+                </div>
+              </header>
+              <p class="connector-blurb">تحقیق صفحات Confluence و استخراج acceptance</p>
+              <div class="connector-config" hidden>
+                <div class="connector-config-bar">
+                  <span class="connector-config-title">تنظیمات اتصال</span>
+                  <button type="button" class="connector-test" data-conn-test="confluence">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                    <span class="ctest-label">تست اتصال</span>
+                  </button>
+                </div>
+                <div class="connector-fields">
+                  <label class="field field--full">
+                    <span class="field-label">Base URL <small>مثلاً https://team.atlassian.net/wiki</small></span>
+                    <input type="url" id="set_confluence_base_url" class="field-input mono" placeholder="https://team.atlassian.net/wiki" autocomplete="off" />
+                  </label>
+                  <label class="field">
+                    <span class="field-label">Email <small>فقط برای Cloud (Basic)</small></span>
+                    <input type="email" id="set_confluence_email" class="field-input mono" placeholder="you@team.com" autocomplete="off" />
+                  </label>
+                  <label class="field">
+                    <span class="field-label">روش احراز هویت <small>Cloud=Basic · داخلی=Bearer</small></span>
+                    <select id="set_confluence_auth_mode" class="field-input mono">
+                      <option value="basic">Basic (Cloud — Email + Token)</option>
+                      <option value="bearer">Bearer (Server داخلی — PAT)</option>
+                    </select>
+                  </label>
+                  <label class="field">
+                    <span class="field-label">Spaces <small>اختیاری — QA,ENG</small></span>
+                    <input type="text" id="set_confluence_space" class="field-input mono" placeholder="QA,ENG" autocomplete="off" />
+                  </label>
+                  <label class="field field--full">
+                    <span class="field-label">API Token <small id="set_confluence_api_token_hint">خالی = بدون تغییر</small></span>
+                    <input type="password" id="set_confluence_api_token" class="field-input mono" placeholder="••••••••" autocomplete="new-password" />
+                  </label>
+                </div>
+              </div>
+            </article>
+
+            <!-- GitHub -->
+            <article class="connector-card" data-conn-card="github">
+              <header class="connector-tile">
+                <div class="connector-id">
+                  <span class="connector-logo" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 00-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0019.5 4.77 5.07 5.07 0 0019.91 1S18.73.65 16 2.48a13.38 13.38 0 00-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 005.5 4.77 5.44 5.44 0 004 8.55c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 009.5 18.13V22"/></svg></span>
+                  <div class="connector-meta">
+                    <div class="connector-name">GitHub</div>
+                    <div class="connector-kind">کد و Pull Requests · github-researcher</div>
+                  </div>
+                </div>
+                <div class="connector-tile-side">
+                  <span class="connector-status" data-conn-status="github">—</span>
+                  <label class="connector-enable" title="فعال‌سازی کانکتور">
+                    <input type="checkbox" id="set_github_subagent" data-conn-enable="github" />
+                    <span class="switch-ui" aria-hidden="true"></span>
+                    <span class="connector-enable-label" data-on="فعال" data-off="غیرفعال">غیرفعال</span>
+                  </label>
+                </div>
+              </header>
+              <p class="connector-blurb">کشف PRها و خواندن diff برای تست wire-level</p>
+              <div class="connector-config" hidden>
+                <div class="connector-config-bar">
+                  <span class="connector-config-title">تنظیمات اتصال</span>
+                  <button type="button" class="connector-test" data-conn-test="github">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                    <span class="ctest-label">تست اتصال</span>
+                  </button>
+                </div>
+                <div class="connector-fields">
+                  <label class="field field--full">
+                    <span class="field-label">Repos <small>owner/repo,owner/repo</small></span>
+                    <input type="text" id="set_github_repos" class="field-input mono" placeholder="owner/web,owner/bot" autocomplete="off" />
+                  </label>
+                  <label class="field">
+                    <span class="field-label">API URL</span>
+                    <input type="url" id="set_github_base_url" class="field-input mono" placeholder="https://api.github.com" autocomplete="off" />
+                  </label>
+                  <label class="field">
+                    <span class="field-label">Token <small id="set_github_token_hint">خالی = بدون تغییر</small></span>
+                    <input type="password" id="set_github_token" class="field-input mono" placeholder="••••••••" autocomplete="new-password" />
+                  </label>
+                </div>
+              </div>
+            </article>
+
+            <!-- Azure DevOps -->
+            <article class="connector-card" data-conn-card="azure">
+              <header class="connector-tile">
+                <div class="connector-id">
+                  <span class="connector-logo" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M3 15l6 6 12-4-4-15-5 1-3 6-6 3z"/></svg></span>
+                  <div class="connector-meta">
+                    <div class="connector-name">Azure DevOps</div>
+                    <div class="connector-kind">Repos · Boards · Wiki · azure-researcher</div>
+                  </div>
+                </div>
+                <div class="connector-tile-side">
+                  <span class="connector-status" data-conn-status="azure">—</span>
+                  <label class="connector-enable" title="فعال‌سازی کانکتور">
+                    <input type="checkbox" id="set_azure_subagent" data-conn-enable="azure" />
+                    <span class="switch-ui" aria-hidden="true"></span>
+                    <span class="connector-enable-label" data-on="فعال" data-off="غیرفعال">غیرفعال</span>
+                  </label>
+                </div>
+              </header>
+              <p class="connector-blurb">Boards/Wiki برای نیازمندی‌ها و PR برای کد</p>
+              <div class="connector-config" hidden>
+                <div class="connector-config-bar">
+                  <span class="connector-config-title">تنظیمات اتصال</span>
+                  <button type="button" class="connector-test" data-conn-test="azure">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                    <span class="ctest-label">تست اتصال</span>
+                  </button>
+                </div>
+                <div class="connector-fields">
+                  <label class="field">
+                    <span class="field-label">Organization</span>
+                    <input type="text" id="set_azure_org" class="field-input mono" placeholder="my-org" autocomplete="off" />
+                  </label>
+                  <label class="field">
+                    <span class="field-label">Project</span>
+                    <input type="text" id="set_azure_project" class="field-input mono" placeholder="my-project" autocomplete="off" />
+                  </label>
+                  <label class="field field--full">
+                    <span class="field-label">Repos <small>repo1,repo2</small></span>
+                    <input type="text" id="set_azure_repos" class="field-input mono" placeholder="web,bff" autocomplete="off" />
+                  </label>
+                  <label class="field">
+                    <span class="field-label">Wiki <small>اختیاری</small></span>
+                    <input type="text" id="set_azure_wiki" class="field-input mono" placeholder="my-project.wiki" autocomplete="off" />
+                  </label>
+                  <label class="field">
+                    <span class="field-label">Base URL</span>
+                    <input type="url" id="set_azure_base_url" class="field-input mono" placeholder="https://dev.azure.com" autocomplete="off" />
+                  </label>
+                  <label class="field">
+                    <span class="field-label">API version <small>Cloud=7.1 · Server داخلی=7.0/6.0</small></span>
+                    <input type="text" id="set_azure_api_version" class="field-input mono" placeholder="7.0" autocomplete="off" />
+                  </label>
+                  <label class="field field--full">
+                    <span class="field-label">Personal Access Token <small id="set_azure_pat_hint">خالی = بدون تغییر</small></span>
+                    <input type="password" id="set_azure_pat" class="field-input mono" placeholder="••••••••" autocomplete="new-password" />
+                  </label>
+                </div>
+              </div>
+            </article>
+
+            <!-- OpenAPI / Swagger -->
+            <article class="connector-card" data-conn-card="openapi">
+              <header class="connector-tile">
+                <div class="connector-id">
+                  <span class="connector-logo" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H7a2 2 0 00-2 2v5a2 2 0 01-2 2 2 2 0 012 2v5a2 2 0 002 2h1"/><path d="M16 3h1a2 2 0 012 2v5a2 2 0 002 2 2 2 0 00-2 2v5a2 2 0 01-2 2h-1"/></svg></span>
+                  <div class="connector-meta">
+                    <div class="connector-name">OpenAPI / Swagger</div>
+                    <div class="connector-kind">قرارداد API · openapi-researcher</div>
+                  </div>
+                </div>
+                <div class="connector-tile-side">
+                  <span class="connector-status" data-conn-status="openapi">—</span>
+                  <label class="connector-enable" title="فعال‌سازی کانکتور">
+                    <input type="checkbox" id="set_openapi_subagent" data-conn-enable="openapi" />
+                    <span class="switch-ui" aria-hidden="true"></span>
+                    <span class="connector-enable-label" data-on="فعال" data-off="غیرفعال">غیرفعال</span>
+                  </label>
+                </div>
+              </header>
+              <p class="connector-blurb">کشف endpointها و استخراج قرارداد request/response و status codeها</p>
+              <div class="connector-config" hidden>
+                <div class="connector-config-bar">
+                  <span class="connector-config-title">تنظیمات اتصال</span>
+                  <button type="button" class="connector-test" data-conn-test="openapi">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                    <span class="ctest-label">تست اتصال</span>
+                  </button>
+                </div>
+                <div class="connector-fields">
+                  <label class="field field--full">
+                    <span class="field-label">Spec ها <small>URL یا مسیر فایل — با کاما جدا کن (JSON یا YAML)</small></span>
+                    <input type="text" id="set_openapi_specs" class="field-input mono" placeholder="https://api.example.com/openapi.json, ./specs/bff.yaml" autocomplete="off" />
+                  </label>
+                  <label class="field field--full">
+                    <span class="field-label">Bearer Token <small id="set_openapi_token_hint">اختیاری — فقط برای specهای محافظت‌شده</small></span>
+                    <input type="password" id="set_openapi_token" class="field-input mono" placeholder="••••••••" autocomplete="new-password" />
+                  </label>
+                </div>
+              </div>
+            </article>
+          </div>
+
+          <label class="switch settings-switch connector-global">
+            <input type="checkbox" id="set_verify_tls" />
+            <span class="switch-ui"></span>
+            <span class="switch-txt"><strong>اعتبارسنجی گواهی TLS</strong><small>برای همه‌ی کانکتورها. اگر سرویس داخلی با گواهی self-signed داری این را خاموش کن</small></span>
+          </label>
+        </div>
+
+        <!-- ═══ Models tab ═══ -->
+        <div class="settings-tabpanel" data-spanel="models">
         <section class="settings-section">
           <h3 class="settings-section-title">اتصال LLM</h3>
           <div class="settings-grid">
@@ -324,7 +621,7 @@
               <input type="url" id="set_llm_base_url" class="field-input mono" placeholder="https://api.avalai.ir/v1" autocomplete="off" />
             </label>
             <label class="field field--full">
-              <span class="field-label">API Key <small id="set_llm_api_key_hint">خالی = بدون تغییر</small></span>
+              <span class="field-label">API Key <small id="set_llm_api_key_hint">خالی = مدل لوکال (بدون کلید)</small></span>
               <input type="password" id="set_llm_api_key" class="field-input mono" placeholder="••••••••" autocomplete="new-password" />
             </label>
             <label class="field">
@@ -334,32 +631,6 @@
             <label class="field">
               <span class="field-label">Generate base URL <small>اختیاری</small></span>
               <input type="url" id="set_generate_base_url" class="field-input mono" placeholder="(همان LLM)" autocomplete="off" />
-            </label>
-          </div>
-        </section>
-
-        <section class="settings-section">
-          <h3 class="settings-section-title">Outline و GitHub</h3>
-          <div class="settings-grid">
-            <label class="field field--full">
-              <span class="field-label">Outline base URL</span>
-              <input type="url" id="set_outline_base_url" class="field-input mono" placeholder="https://…/api" autocomplete="off" />
-            </label>
-            <label class="field field--full">
-              <span class="field-label">Outline API Key <small id="set_outline_api_key_hint">خالی = بدون تغییر</small></span>
-              <input type="password" id="set_outline_api_key" class="field-input mono" placeholder="••••••••" autocomplete="new-password" />
-            </label>
-            <label class="field field--full">
-              <span class="field-label">GitHub repos <small>owner/repo,owner/repo</small></span>
-              <input type="text" id="set_github_repos" class="field-input mono" placeholder="owner/web,owner/bot" autocomplete="off" />
-            </label>
-            <label class="field">
-              <span class="field-label">GitHub API URL</span>
-              <input type="url" id="set_github_base_url" class="field-input mono" placeholder="https://api.github.com" autocomplete="off" />
-            </label>
-            <label class="field">
-              <span class="field-label">GitHub Token <small id="set_github_token_hint">خالی = بدون تغییر</small></span>
-              <input type="password" id="set_github_token" class="field-input mono" placeholder="••••••••" autocomplete="new-password" />
             </label>
           </div>
         </section>
@@ -397,23 +668,10 @@
             </label>
           </div>
         </section>
+        </div>
 
-        <section class="settings-section">
-          <h3 class="settings-section-title">ساب‌ایجنت‌ها</h3>
-          <div class="settings-toggles">
-            <label class="switch settings-switch">
-              <input type="checkbox" id="set_outline_subagent" />
-              <span class="switch-ui"></span>
-              <span class="switch-txt"><strong>outline-researcher</strong><small>تحقیق مستندات Outline و ساخت چک‌لیست acceptance</small></span>
-            </label>
-            <label class="switch settings-switch">
-              <input type="checkbox" id="set_github_subagent" />
-              <span class="switch-ui"></span>
-              <span class="switch-txt"><strong>github-researcher</strong><small>کشف PRها و خواندن diff برای تست wire-level</small></span>
-            </label>
-          </div>
-        </section>
-
+        <!-- ═══ Behavior tab ═══ -->
+        <div class="settings-tabpanel" data-spanel="behavior">
         <section class="settings-section">
           <h3 class="settings-section-title">مسیریابی هوشمند</h3>
           <div class="settings-toggles">
@@ -482,6 +740,7 @@
             </label>
           </div>
         </section>
+        </div>
       </div>
       <div class="modal-foot">
         <button class="btn-ghost" id="settingsCancel">انصراف</button>

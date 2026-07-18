@@ -12,6 +12,7 @@
   let activeJobKind = "generate";
   let lastActivitySig = "";
   let allRuns = [];
+  let lastStatus = null;
 
   const ICONS = {
     search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>',
@@ -132,6 +133,7 @@
   }
 
   function renderStatus(data) {
+    lastStatus = data;
     const cred = $("#credStatus");
     cred.className = "status-pill " + (data.credentials_ok ? "ok" : "warn");
     cred.querySelector(".status-text").textContent = data.credentials_ok
@@ -153,12 +155,34 @@
       ? `<span class="badge ok">${data.graph.nodes} nodes</span>`
       : `<span class="badge warn">${data.graph.note ? "placeholder" : "empty"}</span>`;
 
+    const azureRepos = data.azure_repos || [];
     $("#integrationStats").innerHTML = `
       <div class="integ-item"><span class="name">GitHub</span>${data.github_repos.length ? `<span class="badge ok">${data.github_repos.length} repos</span>` : '<span class="badge warn">none</span>'}</div>
       <div class="integ-item"><span class="name">Outline</span>${data.outline_configured ? '<span class="badge ok">connected</span>' : '<span class="badge warn">not set</span>'}</div>
-      <div class="integ-item"><span class="name">Graph</span>${graphBadge}</div>
-      <div class="integ-item"><span class="name">outline-sa</span>${data.outline_subagent !== false ? '<span class="badge ok">on</span>' : '<span class="badge warn">off</span>'}</div>
-      <div class="integ-item"><span class="name">github-sa</span>${data.github_subagent !== false ? '<span class="badge ok">on</span>' : '<span class="badge warn">off</span>'}</div>`;
+      <div class="integ-item"><span class="name">Confluence</span>${data.confluence_configured ? '<span class="badge ok">connected</span>' : '<span class="badge warn">not set</span>'}</div>
+      <div class="integ-item"><span class="name">Azure</span>${data.azure_configured ? `<span class="badge ok">${azureRepos.length || "connected"}${azureRepos.length ? " repos" : ""}</span>` : '<span class="badge warn">not set</span>'}</div>
+      <div class="integ-item"><span class="name">OpenAPI</span>${data.openapi_configured ? `<span class="badge ok">${(data.openapi_specs || []).length || "connected"}${(data.openapi_specs || []).length ? " specs" : ""}</span>` : '<span class="badge warn">not set</span>'}</div>
+      <div class="integ-item"><span class="name">Graph</span>${graphBadge}</div>`;
+
+    renderConnectorBadges(data);
+  }
+
+  const CONNECTOR_STATE = {
+    outline: (d) => d.outline_configured,
+    confluence: (d) => d.confluence_configured,
+    github: (d) => (d.github_repos || []).length > 0,
+    azure: (d) => d.azure_configured,
+    openapi: (d) => d.openapi_configured,
+  };
+
+  function renderConnectorBadges(data) {
+    Object.entries(CONNECTOR_STATE).forEach(([conn, isOn]) => {
+      const badge = document.querySelector(`[data-conn-status="${conn}"]`);
+      if (!badge) return;
+      const on = !!isOn(data);
+      badge.className = "connector-status " + (on ? "ok" : "off");
+      badge.textContent = on ? "متصل" : "تنظیم نشده";
+    });
   }
 
   function syncBudgetSelect(budget) {
@@ -411,6 +435,9 @@
     const catLabel = {
       outline: "مستندات",
       github: "کد",
+      confluence: "Confluence",
+      azure: "Azure",
+      openapi: "OpenAPI",
       graph: "گراف",
       agent: "ایجنت",
       plan: "برنامه",
@@ -476,30 +503,50 @@
 
   function displayIndexResult(result) {
     if (!result) return;
-    const summary = [
-      `اسناد همگام‌شده: ${result.docs_synced ?? 0}`,
-      `پوشه‌های کد: ${(result.code_dirs || []).length}`,
-      `گراف ساخته شد: ${result.graph_built ? "بله" : "خیر"}`,
-    ].join("\n");
+    const req = result.requested || {};
+    const lines = [];
+    if (req.outline_sync || req.confluence_sync || req.openapi_sync) {
+      lines.push(`اسناد همگام‌شده: ${result.docs_synced ?? 0}`);
+    } else {
+      lines.push("اسناد: تیک همگام‌سازی زده نشده بود");
+    }
+    if (req.github_clone || req.azure_clone) {
+      const n = (result.code_dirs || []).length;
+      const azureN = (result.azure_code_dirs || []).length;
+      lines.push(`پوشه‌های کد: ${n}` + (req.azure_clone ? ` (Azure: ${azureN})` : ""));
+    } else {
+      lines.push("کد: تیک Clone/pull زده نشده بود");
+    }
+    lines.push(`گراف ساخته شد: ${result.graph_built ? "بله" : "خیر"}`);
+    if (result.docs_indexed != null) {
+      lines.push(`ایندکس بازیابی: ${result.docs_indexed} سند`);
+    }
+    const summary = lines.join("\n");
     const el = $("#indexResult");
     if (el) {
       el.classList.remove("hidden");
       el.textContent = summary;
     }
-    $("#activityLog").innerHTML = `
-      <div class="act-timeline">
-        <div class="act done">
-          <div class="act-rail"><div class="act-node index">${ICONS.graph}</div></div>
-          <div class="act-card">
-            <div class="act-card-top">
-              <span class="act-title">ایندکس کامل شد</span>
-              <span class="act-cat">ایندکس</span>
-              <span class="act-state done" title="انجام شد">${CHECK}</span>
-            </div>
-            <div class="act-result">${escapeHtml(summary)}</div>
+    // Append a completion card — don't wipe the live activity timeline.
+    const log = $("#activityLog");
+    let timeline = log.querySelector(".act-timeline");
+    if (!timeline) {
+      log.innerHTML = '<div class="act-timeline"></div>';
+      timeline = log.querySelector(".act-timeline");
+    }
+    timeline.insertAdjacentHTML("beforeend", `
+      <div class="act done">
+        <div class="act-rail"><div class="act-node index">${ICONS.graph}</div></div>
+        <div class="act-card">
+          <div class="act-card-top">
+            <span class="act-title">ایندکس کامل شد</span>
+            <span class="act-cat">ایندکس</span>
+            <span class="act-state done" title="انجام شد">${CHECK}</span>
           </div>
+          <div class="act-result">${escapeHtml(summary)}</div>
         </div>
-      </div>`;
+      </div>`);
+    log.scrollTop = log.scrollHeight;
   }
 
   // ── Tabs ─────────────────────────────────────────────────────────────
@@ -698,6 +745,9 @@
           outline_sync: $("#idxOutline").checked,
           github_clone: $("#idxGithub").checked,
           with_graph: $("#idxGraph").checked,
+          confluence_sync: $("#idxConfluence").checked,
+          azure_clone: $("#idxAzure").checked,
+          openapi_sync: $("#idxOpenapi").checked,
         }),
       });
       watchJob(job_id, "index");
@@ -751,9 +801,29 @@
     set_generate_base_url: "qa_agent_generate_base_url",
     set_outline_base_url: "outline_base_url",
     set_outline_api_key: "outline_api_key",
+    set_outline_subagent: "qa_agent_outline_subagent",
     set_github_repos: "github_repos",
     set_github_base_url: "github_base_url",
     set_github_token: "github_token",
+    set_github_subagent: "qa_agent_github_subagent",
+    set_confluence_base_url: "confluence_base_url",
+    set_confluence_email: "confluence_email",
+    set_confluence_api_token: "confluence_api_token",
+    set_confluence_space: "confluence_space",
+    set_confluence_auth_mode: "confluence_auth_mode",
+    set_confluence_subagent: "qa_agent_confluence_subagent",
+    set_azure_org: "azure_devops_org",
+    set_azure_project: "azure_devops_project",
+    set_azure_repos: "azure_devops_repos",
+    set_azure_wiki: "azure_devops_wiki",
+    set_azure_base_url: "azure_devops_base_url",
+    set_azure_api_version: "azure_devops_api_version",
+    set_azure_pat: "azure_devops_pat",
+    set_azure_subagent: "qa_agent_azure_subagent",
+    set_openapi_specs: "openapi_specs",
+    set_openapi_token: "openapi_token",
+    set_openapi_subagent: "qa_agent_openapi_subagent",
+    set_verify_tls: "qa_agent_verify_tls",
     set_nano_model: "qa_agent_nano_model",
     set_research_model: "qa_agent_research_model",
     set_generate_model: "qa_agent_generate_model",
@@ -761,8 +831,6 @@
     set_embedding_model: "qa_agent_embedding_model",
     set_embedding_base_url: "qa_agent_embedding_base_url",
     set_embedding_api_key: "qa_agent_embedding_api_key",
-    set_outline_subagent: "qa_agent_outline_subagent",
-    set_github_subagent: "qa_agent_github_subagent",
     set_query_expansion: "qa_agent_query_expansion",
     set_triage: "qa_agent_triage",
     set_escalation: "qa_agent_escalation",
@@ -783,6 +851,10 @@
     "qa_agent_escalation",
     "qa_agent_outline_subagent",
     "qa_agent_github_subagent",
+    "qa_agent_confluence_subagent",
+    "qa_agent_azure_subagent",
+    "qa_agent_openapi_subagent",
+    "qa_agent_verify_tls",
   ]);
 
   const SETTINGS_SECRET = new Set([
@@ -790,6 +862,9 @@
     "outline_api_key",
     "github_token",
     "qa_agent_embedding_api_key",
+    "confluence_api_token",
+    "azure_devops_pat",
+    "openapi_token",
   ]);
 
   function openSettingsModal() {
@@ -804,6 +879,12 @@
   function updateSecretHint(elId, configured) {
     const hint = $("#" + elId + "_hint");
     if (!hint) return;
+    if (elId === "set_llm_api_key" || elId === "set_embedding_api_key") {
+      hint.textContent = configured
+        ? "تنظیم‌شده — خالی = بدون تغییر · پاک‌کردن از فایل تنظیمات"
+        : "خالی = مدل لوکال (بدون کلید)";
+      return;
+    }
     hint.textContent = configured
       ? "تنظیم‌شده — خالی = بدون تغییر"
       : "هنوز تنظیم نشده";
@@ -825,9 +906,122 @@
           el.value = values[key] == null ? "" : String(values[key]);
         }
       });
+      syncAllConnectorCards();
+      if (lastStatus) renderConnectorBadges(lastStatus);
     } catch (e) {
       toast(e.message || "بارگذاری تنظیمات ناموفق بود", "error");
     }
+  }
+
+  // ── Connector connection test ────────────────────────────────────────────
+
+  const CONNECTOR_LABELS = {
+    outline: "Outline",
+    confluence: "Confluence",
+    github: "GitHub",
+    azure: "Azure DevOps",
+    openapi: "OpenAPI",
+  };
+
+  function setConnectorResult(name, state, message, detail) {
+    const card = document.querySelector(`[data-conn-card="${name}"]`);
+    if (!card) return;
+    const config = card.querySelector(".connector-config");
+    let box = card.querySelector(".connector-test-result");
+    if (!box) {
+      box = document.createElement("div");
+      box.className = "connector-test-result";
+      const bar = config && config.querySelector(".connector-config-bar");
+      if (bar) bar.insertAdjacentElement("afterend", box);
+      else if (config) config.prepend(box);
+      else card.appendChild(box);
+    }
+    box.className = "connector-test-result " + state;
+    const icon = state === "ok"
+      ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><polyline points="20 6 9 17 4 12"/></svg>'
+      : state === "loading"
+        ? '<span class="spinner"></span>'
+        : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>';
+    box.innerHTML = `${icon}<div class="ctest-text"><b></b>${detail ? '<small></small>' : ''}</div>`;
+    box.querySelector("b").textContent = message;
+    if (detail) box.querySelector("small").textContent = detail;
+
+    const badge = document.querySelector(`[data-conn-status="${name}"]`);
+    if (badge && state !== "loading") {
+      badge.className = "connector-status " + (state === "ok" ? "ok" : "off");
+      badge.textContent = state === "ok" ? "متصل" : "ناموفق";
+    }
+  }
+
+  function syncConnectorCard(card) {
+    if (!card) return;
+    const toggle = card.querySelector("[data-conn-enable]");
+    const config = card.querySelector(".connector-config");
+    const label = card.querySelector(".connector-enable-label");
+    const on = !!(toggle && toggle.checked);
+    card.classList.toggle("is-on", on);
+    if (config) {
+      config.hidden = !on;
+      config.setAttribute("aria-hidden", on ? "false" : "true");
+    }
+    if (label) {
+      label.textContent = on
+        ? (label.dataset.on || "فعال")
+        : (label.dataset.off || "غیرفعال");
+    }
+  }
+
+  function syncAllConnectorCards() {
+    $$("[data-conn-card]").forEach(syncConnectorCard);
+  }
+
+  async function testConnector(name, btn) {
+    if (btn) btn.disabled = true;
+    setConnectorResult(name, "loading", "در حال بررسی اتصال…");
+    try {
+      const res = await api(`/api/connectors/${name}/test`, {
+        method: "POST",
+        body: JSON.stringify({ values: collectSettingsForm() }),
+      });
+      const label = CONNECTOR_LABELS[name] || name;
+      if (res.ok) {
+        setConnectorResult(name, "ok", res.message || "اتصال برقرار شد", res.detail || "");
+        toast(`${label}: اتصال برقرار شد`);
+      } else {
+        const state = res.configured === false ? "warn" : "error";
+        setConnectorResult(name, state, res.message || "اتصال ناموفق بود", res.detail || "");
+        toast(`${label}: ${res.message || "اتصال ناموفق بود"}`, "error");
+      }
+    } catch (e) {
+      setConnectorResult(name, "error", e.message || "تست اتصال ناموفق بود");
+      toast(e.message || "تست اتصال ناموفق بود", "error");
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  function initConnectorMarketplace() {
+    $$("[data-conn-enable]").forEach((toggle) => {
+      toggle.addEventListener("change", () => {
+        syncConnectorCard(toggle.closest("[data-conn-card]"));
+      });
+    });
+    $$(".connector-test").forEach((btn) => {
+      btn.addEventListener("click", () => testConnector(btn.dataset.connTest, btn));
+    });
+    syncAllConnectorCards();
+  }
+
+  function initSettingsTabs() {
+    $$(".settings-tab").forEach((tab) => {
+      tab.addEventListener("click", () => {
+        const name = tab.dataset.stab;
+        $$(".settings-tab").forEach((t) => t.classList.toggle("active", t === tab));
+        $$(".settings-tabpanel").forEach((p) =>
+          p.classList.toggle("active", p.dataset.spanel === name)
+        );
+      });
+    });
   }
 
   function collectSettingsForm() {
@@ -879,6 +1073,8 @@
   function init() {
     initTheme();
     initTabs();
+    initSettingsTabs();
+    initConnectorMarketplace();
     loadStatus();
     loadRuns();
     renderGherkin("");

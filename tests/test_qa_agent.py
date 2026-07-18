@@ -373,6 +373,102 @@ def test_create_index_job():
     assert job.index_options["outline_sync"] is True
 
 
+def test_create_index_job_with_new_connectors():
+    job = job_store.create_index(
+        outline_sync=False,
+        github_clone=False,
+        with_graph=False,
+        confluence_sync=True,
+        azure_clone=True,
+    )
+    assert job.index_options["confluence_sync"] is True
+    assert job.index_options["azure_clone"] is True
+    assert "Confluence" in job.query
+    assert "Azure" in job.query
+
+
+def test_confluence_configured_property():
+    from qa_agent.config import Settings
+
+    off = Settings(confluence_base_url="", confluence_api_token="")
+    assert off.confluence_configured is False
+    on = Settings(
+        confluence_base_url="https://team.atlassian.net/wiki",
+        confluence_api_token="tok",
+        confluence_space="QA, ENG",
+    )
+    assert on.confluence_configured is True
+    assert on.confluence_spaces_list == ["QA", "ENG"]
+
+
+def test_azure_configured_and_urls():
+    from qa_agent.config import Settings
+
+    off = Settings(azure_devops_pat="", azure_devops_org="", azure_devops_project="")
+    assert off.azure_devops_configured is False
+    on = Settings(
+        azure_devops_pat="pat",
+        azure_devops_org="acme",
+        azure_devops_project="web",
+        azure_devops_repos="app, bff",
+    )
+    assert on.azure_devops_configured is True
+    assert on.azure_devops_repos_list == ["app", "bff"]
+    assert on.azure_project_url() == "https://dev.azure.com/acme/web"
+    assert on.azure_repo_clone_url_for("app") == "https://dev.azure.com/acme/web/_git/app"
+
+
+def test_confluence_client_search_mock():
+    from qa_agent.tools.confluence import ConfluenceClient
+
+    settings = MagicMock()
+    settings.confluence_base_url = "https://team.atlassian.net/wiki"
+    settings.confluence_email = "you@team.com"
+    settings.confluence_api_token = "tok"
+    settings.confluence_spaces_list = []
+    settings.cache_dir = Path("/tmp/qa-agent-test-cache-conf")
+
+    client = ConfluenceClient(settings)
+    with patch("httpx.Client") as mock_client:
+        response = MagicMock()
+        response.json.return_value = {"results": [{"id": "42", "title": "Search Pane PRD"}]}
+        response.raise_for_status = MagicMock()
+        mock_client.return_value.__enter__.return_value.get.return_value = response
+        pages = client.search("search pane", limit=5)
+        assert pages[0]["id"] == "42"
+
+
+def test_storage_to_text_strips_html():
+    from qa_agent.tools.confluence import _storage_to_text
+
+    text = _storage_to_text("<h1>Title</h1><p>Hello <b>world</b></p>")
+    assert "Title" in text
+    assert "Hello world" in text
+    assert "<" not in text
+
+
+def test_azure_client_list_prs_mock():
+    from qa_agent.tools.azure_devops import AzureDevOpsClient
+
+    settings = MagicMock()
+    settings.azure_devops_configured = True
+    settings.azure_devops_repos_list = ["web"]
+    settings.azure_devops_pat = "pat"
+    settings.azure_project_url.return_value = "https://dev.azure.com/acme/web"
+    settings.cache_dir = Path("/tmp/qa-agent-test-cache-azure")
+
+    client = AzureDevOpsClient(settings)
+    with patch("httpx.Client") as mock_client:
+        response = MagicMock()
+        response.json.return_value = {
+            "value": [{"pullRequestId": 7, "title": "Add search pane", "status": "active"}]
+        }
+        response.raise_for_status = MagicMock()
+        mock_client.return_value.__enter__.return_value.get.return_value = response
+        prs = client.list_pull_requests("web", status="all", limit=10)
+        assert prs[0]["pullRequestId"] == 7
+
+
 def test_run_index_emits_activities(tmp_path, monkeypatch):
     from qa_agent.config import Settings
 
@@ -459,9 +555,16 @@ def test_lint_gherkin_quality_accepts_localstorage_and_data_filters():
 
 
 def test_lint_gherkin_quality_accepts_sanitize_and_bff_domain_steps():
-    concrete = Path(
-        "output/تمام-تست-کیس-های-حیاتی-و-مهم-search-pane-رو-بنوی-20260714-220032.feature"
-    ).read_text(encoding="utf-8")
+    # Self-contained fixture: legit BFF/sanitize domain steps must not be flagged
+    # for missing concrete signals or abstract wording.
+    concrete = """Feature: Search Pane BFF sanitize contract
+  @acceptance-B-8 @layer-bff
+  Scenario: BFF sanitizes filters before forwarding to send-message
+    Given POST /api/bot/send-message receives filters {"propertyType":"condo","priceMin":800000}
+    When the BFF calls sanitizeFields(filters) and forwards the request
+    Then the upstream POST /api/bot/send-message body contains "filters" with only known keys
+    And unknown keys are stripped and invalid enums return 400 with code "VALIDATION_ERROR"
+"""
     warnings = lint_gherkin_quality(concrete)
     flagged = [w for w in warnings if "concrete signals" in w or "abstract wording" in w]
     assert flagged == []

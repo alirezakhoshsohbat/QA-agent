@@ -25,6 +25,22 @@ UI_MANAGED_FIELDS: tuple[str, ...] = (
     "github_token",
     "github_base_url",
     "github_repos",
+    "confluence_base_url",
+    "confluence_email",
+    "confluence_api_token",
+    "confluence_space",
+    "confluence_auth_mode",
+    "azure_devops_pat",
+    "azure_devops_org",
+    "azure_devops_project",
+    "azure_devops_base_url",
+    "azure_devops_repos",
+    "azure_devops_wiki",
+    "azure_devops_api_version",
+    "openapi_specs",
+    "openapi_token",
+    # TLS
+    "qa_agent_verify_tls",
     # Model ladder
     "qa_agent_research_model",
     "qa_agent_generate_model",
@@ -38,6 +54,9 @@ UI_MANAGED_FIELDS: tuple[str, ...] = (
     # Sub-agents
     "qa_agent_outline_subagent",
     "qa_agent_github_subagent",
+    "qa_agent_confluence_subagent",
+    "qa_agent_azure_subagent",
+    "qa_agent_openapi_subagent",
     # Persistence
     "qa_agent_max_write_attempts",
     "qa_agent_max_reprompts",
@@ -58,6 +77,9 @@ SECRET_FIELDS = frozenset(
         "qa_agent_embedding_api_key",
         "outline_api_key",
         "github_token",
+        "confluence_api_token",
+        "azure_devops_pat",
+        "openapi_token",
     }
 )
 
@@ -68,6 +90,25 @@ _BOOL_FIELDS = frozenset(
         "qa_agent_escalation",
         "qa_agent_outline_subagent",
         "qa_agent_github_subagent",
+        "qa_agent_confluence_subagent",
+        "qa_agent_azure_subagent",
+        "qa_agent_openapi_subagent",
+        "qa_agent_verify_tls",
+    }
+)
+
+# Blank in the UI means "keep the Settings default / .env value", not an
+# explicit empty override. Storing "" would wipe required model names.
+_EMPTY_CLEARS_OVERRIDE = frozenset(
+    {
+        "qa_agent_research_model",
+        "qa_agent_generate_model",
+        "qa_agent_nano_model",
+        "qa_agent_pro_model",
+        "qa_agent_embedding_model",
+        "qa_agent_research_base_url",
+        "qa_agent_generate_base_url",
+        "qa_agent_embedding_base_url",
     }
 )
 
@@ -163,6 +204,11 @@ def save_preferences(
         if is_secret_unchanged(cleaned[key], existing):
             cleaned.pop(key, None)
 
+    for key in list(cleaned.keys()):
+        if cleaned[key] is None:
+            cleaned.pop(key, None)
+            current.pop(key, None)
+
     current.update(cleaned)
     path = preferences_path()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -190,7 +236,12 @@ def sanitize_preferences(raw: dict[str, Any]) -> dict[str, Any]:
             lo, hi = _FIELD_BOUNDS[key]
             cleaned[key] = max(lo, min(hi, number))
         else:
-            cleaned[key] = str(value).strip() if value is not None else ""
+            text = str(value).strip() if value is not None else ""
+            if key in _EMPTY_CLEARS_OVERRIDE and not text:
+                # Sentinel: caller should delete this key from stored prefs.
+                cleaned[key] = None
+            else:
+                cleaned[key] = text
     return cleaned
 
 
@@ -203,11 +254,22 @@ def _as_bool(value: Any) -> bool:
 
 
 def apply_preferences(settings: Any) -> Any:
-    """Return a copy of ``settings`` with UI preferences overlaid."""
+    """Return a copy of ``settings`` with UI preferences overlaid.
+
+    Empty strings for model/URL override fields are ignored so they cannot
+    wipe Settings defaults (e.g. blank Research model → keep .env default).
+    """
     prefs = load_preferences()
     if not prefs:
         return settings
-    return settings.model_copy(update=prefs)
+    update = {
+        k: v
+        for k, v in prefs.items()
+        if not (k in _EMPTY_CLEARS_OVERRIDE and (v is None or str(v).strip() == ""))
+    }
+    if not update:
+        return settings
+    return settings.model_copy(update=update)
 
 
 def preferences_snapshot(settings: Any) -> dict[str, Any]:

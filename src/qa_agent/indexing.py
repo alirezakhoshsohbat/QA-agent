@@ -13,6 +13,9 @@ from qa_agent.config import Settings, get_settings
 from qa_agent.tools.graphify import build_graph
 from qa_agent.tools.github import GitHubClient
 from qa_agent.tools.outline import OutlineClient
+from qa_agent.tools.confluence import ConfluenceClient
+from qa_agent.tools.azure_devops import AzureDevOpsClient
+from qa_agent.tools.openapi import OpenAPIClient, spec_to_markdown
 
 IndexActivityCallback = Callable[[dict[str, Any]], None]
 
@@ -64,7 +67,7 @@ def sync_outline_docs(
     _emit_start(on_activity, "index_outline_sync", "دریافت لیست اسناد از Outline")
 
     try:
-        with httpx.Client(timeout=30.0) as http:
+        with httpx.Client(timeout=30.0, verify=settings.httpx_verify) as http:
             response = http.post(
                 f"{settings.outline_base_url.rstrip('/')}/documents.list",
                 headers={
@@ -113,6 +116,157 @@ def sync_outline_docs(
         result_preview=f"{count} سند export شد",
     )
     return count
+
+
+def sync_confluence_docs(
+    settings: Settings | None = None,
+    on_activity: IndexActivityCallback | None = None,
+) -> int:
+    """Export Confluence pages to corpus/docs/ as markdown files."""
+    settings = settings or get_settings()
+    docs_dir = settings.corpus_docs_dir
+    docs_dir.mkdir(parents=True, exist_ok=True)
+
+    if not settings.confluence_configured:
+        _emit_start(on_activity, "index_confluence_sync", "Confluence تنظیم نشده")
+        _emit_end(on_activity, "index_confluence_sync", result_preview="رد شد — تنظیمات موجود نیست")
+        return 0
+
+    _emit_start(on_activity, "index_confluence_sync", "دریافت صفحات از Confluence")
+    client = ConfluenceClient(settings)
+
+    seen: set[str] = set()
+    pages: list[dict] = []
+    for term in ["", "guide", "api", "feature", "test", "acceptance"]:
+        try:
+            for raw in client.search(term or "documentation", limit=50):
+                pid = str(raw.get("id") or "")
+                if pid and pid not in seen:
+                    seen.add(pid)
+                    pages.append(raw)
+        except httpx.HTTPError:
+            continue
+
+    count = 0
+    for raw in pages:
+        pid = str(raw.get("id") or "")
+        title = str(raw.get("title") or pid)
+        _emit_start(on_activity, "index_confluence_page", title)
+        try:
+            text = client.export_page_text(pid)
+            path = docs_dir / f"{_safe_filename(title)}-conf{pid[:8]}.md"
+            path.write_text(text, encoding="utf-8")
+            count += 1
+            _emit_end(on_activity, "index_confluence_page", detail=title, result_preview=f"ذخیره شد — {path.name}")
+        except httpx.HTTPError:
+            _emit_end(on_activity, "index_confluence_page", detail=title, result_preview="خطا در export")
+
+    _emit_end(on_activity, "index_confluence_sync", result_preview=f"{count} صفحه export شد")
+    return count
+
+
+def sync_openapi_specs(
+    settings: Settings | None = None,
+    on_activity: IndexActivityCallback | None = None,
+) -> int:
+    """Render configured OpenAPI/Swagger specs into corpus/docs/ as markdown."""
+    settings = settings or get_settings()
+    docs_dir = settings.corpus_docs_dir
+    docs_dir.mkdir(parents=True, exist_ok=True)
+
+    specs = settings.openapi_specs_list
+    if not specs:
+        _emit_start(on_activity, "index_openapi_sync", "OpenAPI تنظیم نشده")
+        _emit_end(on_activity, "index_openapi_sync", result_preview="رد شد — specای تنظیم نشده")
+        return 0
+
+    _emit_start(on_activity, "index_openapi_sync", f"{len(specs)} spec")
+    client = OpenAPIClient(settings)
+
+    count = 0
+    for index, location in enumerate(specs):
+        _emit_start(on_activity, "index_openapi_spec", location)
+        rendered = spec_to_markdown(client, location)
+        if rendered is None:
+            _emit_end(
+                on_activity,
+                "index_openapi_spec",
+                detail=location,
+                result_preview="خطا — spec خوانده/پارس نشد",
+            )
+            continue
+        name, markdown = rendered
+        path = docs_dir / f"{_safe_filename(name)}-api{index}.md"
+        path.write_text(markdown, encoding="utf-8")
+        count += 1
+        _emit_end(
+            on_activity,
+            "index_openapi_spec",
+            detail=name,
+            result_preview=f"ذخیره شد — {path.name}",
+        )
+
+    _emit_end(on_activity, "index_openapi_sync", result_preview=f"{count} spec ذخیره شد")
+    return count
+
+
+def sync_azure_code(
+    settings: Settings | None = None,
+    on_activity: IndexActivityCallback | None = None,
+) -> list[str]:
+    """Clone or pull all configured Azure DevOps repos into corpus/code/{repo}/."""
+    settings = settings or get_settings()
+    code_dir = settings.corpus_code_dir
+    repos = settings.azure_devops_repos_list
+
+    if not settings.azure_devops_configured:
+        code_dir.mkdir(parents=True, exist_ok=True)
+        _emit_start(on_activity, "index_azure_clone", "Azure DevOps تنظیم نشده")
+        _emit_end(on_activity, "index_azure_clone", result_preview="رد شد — تنظیمات موجود نیست")
+        return []
+
+    client = AzureDevOpsClient(settings)
+
+    # No explicit repo list → discover and clone every repo in the project.
+    discovered = False
+    if not repos:
+        _emit_start(on_activity, "index_azure_clone", "کشف خودکار repoها")
+        try:
+            repos = client.list_repository_names()
+            discovered = True
+        except Exception as exc:  # noqa: BLE001 - report, don't crash the index
+            _emit_end(
+                on_activity,
+                "index_azure_clone",
+                result_preview=f"کشف repoها ناموفق بود — {str(exc)[:120]}",
+            )
+            return []
+
+    if not repos:
+        code_dir.mkdir(parents=True, exist_ok=True)
+        _emit_end(on_activity, "index_azure_clone", result_preview="رد شد — repoای در پروژه یافت نشد")
+        return []
+
+    label = f"{len(repos)} repo" + (" (کشف خودکار)" if discovered else "")
+    _emit_start(on_activity, "index_azure_clone", label)
+    paths: list[str] = []
+    errors: list[str] = []
+    for repo in repos:
+        _emit_start(on_activity, "index_azure_repo", repo)
+        try:
+            path, action = client.clone_configured_repo(repo, code_dir)
+            paths.append(str(path))
+            _emit_end(on_activity, "index_azure_repo", detail=repo, result_preview=f"{action} — {repo}/")
+        except (RuntimeError, subprocess.CalledProcessError, OSError) as exc:
+            message = str(exc).strip() or exc.__class__.__name__
+            errors.append(f"{repo}: {message[:160]}")
+            _emit_end(on_activity, "index_azure_repo", detail=repo, result_preview=f"خطا — {message[:120]}")
+
+    preview = f"{len(paths)} repo آماده"
+    if errors:
+        preview += f" · {len(errors)} خطا"
+    _emit_end(on_activity, "index_azure_clone", result_preview=preview)
+    return paths
 
 
 def sync_github_code(
@@ -168,6 +322,9 @@ def run_index(
     outline_sync: bool = False,
     github_clone: bool = False,
     with_graph: bool = False,
+    confluence_sync: bool = False,
+    azure_clone: bool = False,
+    openapi_sync: bool = False,
     settings: Settings | None = None,
     on_activity: IndexActivityCallback | None = None,
 ) -> dict:
@@ -186,11 +343,32 @@ def run_index(
         _emit_start(on_activity, "index_outline_sync", "غیرفعال")
         _emit_end(on_activity, "index_outline_sync", result_preview="رد شد")
 
+    if confluence_sync:
+        result["confluence_synced"] = sync_confluence_docs(settings, on_activity=on_activity)
+        result["docs_synced"] += result["confluence_synced"]
+    else:
+        _emit_start(on_activity, "index_confluence_sync", "غیرفعال")
+        _emit_end(on_activity, "index_confluence_sync", result_preview="رد شد")
+
+    if openapi_sync:
+        result["openapi_synced"] = sync_openapi_specs(settings, on_activity=on_activity)
+        result["docs_synced"] += result["openapi_synced"]
+    else:
+        _emit_start(on_activity, "index_openapi_sync", "غیرفعال")
+        _emit_end(on_activity, "index_openapi_sync", result_preview="رد شد")
+
     if github_clone:
         result["code_dirs"] = sync_github_code(settings, on_activity=on_activity)
     else:
         _emit_start(on_activity, "index_github_clone", "غیرفعال")
         _emit_end(on_activity, "index_github_clone", result_preview="رد شد")
+
+    if azure_clone:
+        result["azure_code_dirs"] = sync_azure_code(settings, on_activity=on_activity)
+        result["code_dirs"] = list(result["code_dirs"]) + result["azure_code_dirs"]
+    else:
+        _emit_start(on_activity, "index_azure_clone", "غیرفعال")
+        _emit_end(on_activity, "index_azure_clone", result_preview="رد شد")
 
     # Retrieval index + corpus map are cheap and deterministic — always refresh.
     _emit_start(on_activity, "index_corpus_map", "BM25 index + corpus map")
@@ -248,11 +426,19 @@ def run_index(
 
     _emit_start(on_activity, "index_finalize", "جمع‌بندی نتیجه")
     summary = []
-    if outline_sync:
+    if outline_sync or confluence_sync or openapi_sync:
         summary.append(f"{result['docs_synced']} doc")
-    if github_clone:
+    if github_clone or azure_clone:
         summary.append(f"{len(result['code_dirs'])} repo")
     summary.append("graph ✓" if result["graph_built"] else "graph ✗")
     _emit_end(on_activity, "index_finalize", result_preview=" · ".join(summary))
 
+    result["requested"] = {
+        "outline_sync": outline_sync,
+        "confluence_sync": confluence_sync,
+        "openapi_sync": openapi_sync,
+        "github_clone": github_clone,
+        "azure_clone": azure_clone,
+        "with_graph": with_graph,
+    }
     return result

@@ -19,6 +19,12 @@ INDEX_STEP_META: dict[str, dict[str, str]] = {
     "index_outline_doc": {"category": "index", "icon": "read", "title": "ذخیره سند Outline"},
     "index_github_clone": {"category": "index", "icon": "file", "title": "دریافت کد از GitHub"},
     "index_github_repo": {"category": "index", "icon": "file", "title": "به‌روزرسانی ریپازیتوری"},
+    "index_confluence_sync": {"category": "index", "icon": "read", "title": "همگام‌سازی صفحات Confluence"},
+    "index_confluence_page": {"category": "index", "icon": "read", "title": "ذخیره صفحه Confluence"},
+    "index_azure_clone": {"category": "index", "icon": "file", "title": "دریافت کد از Azure DevOps"},
+    "index_azure_repo": {"category": "index", "icon": "file", "title": "به‌روزرسانی ریپازیتوری Azure"},
+    "index_openapi_sync": {"category": "index", "icon": "read", "title": "همگام‌سازی OpenAPI"},
+    "index_openapi_spec": {"category": "index", "icon": "read", "title": "ذخیره spec API"},
     "index_corpus_map": {"category": "index", "icon": "search", "title": "ساخت ایندکس جستجو"},
     "index_graph_build": {"category": "index", "icon": "graph", "title": "ساخت گراف دانش"},
     "index_graph_skip": {"category": "index", "icon": "graph", "title": "گراف موقت (بدون build کامل)"},
@@ -40,6 +46,18 @@ TOOL_META: dict[str, dict[str, str]] = {
     "github_get_pull_request": {"category": "github", "icon": "read", "title": "خواندن جزئیات PR"},
     "github_get_pr_changes": {"category": "github", "icon": "diff", "title": "بررسی تغییرات کد (diff)"},
     "github_get_file_content": {"category": "github", "icon": "file", "title": "خواندن فایل از ریپو"},
+    "confluence_research_bundle": {"category": "confluence", "icon": "search", "title": "تحقیق در Confluence"},
+    "confluence_get_page": {"category": "confluence", "icon": "read", "title": "خواندن صفحه Confluence"},
+    "azure_discover_relevant_prs": {"category": "azure", "icon": "search", "title": "پیدا کردن PRهای Azure"},
+    "azure_get_pull_request": {"category": "azure", "icon": "read", "title": "خواندن جزئیات PR (Azure)"},
+    "azure_get_pr_changes": {"category": "azure", "icon": "diff", "title": "بررسی تغییرات PR (Azure)"},
+    "azure_get_file_content": {"category": "azure", "icon": "file", "title": "خواندن فایل از Azure Repo"},
+    "azure_search_work_items": {"category": "azure", "icon": "search", "title": "جستجوی Work Item (Boards)"},
+    "azure_get_work_item": {"category": "azure", "icon": "read", "title": "خواندن Work Item"},
+    "azure_wiki_search": {"category": "azure", "icon": "search", "title": "جستجو در Wiki (Azure)"},
+    "azure_wiki_get_page": {"category": "azure", "icon": "read", "title": "خواندن صفحه Wiki (Azure)"},
+    "openapi_research_bundle": {"category": "openapi", "icon": "search", "title": "تحقیق در OpenAPI"},
+    "openapi_get_operation": {"category": "openapi", "icon": "read", "title": "خواندن قرارداد Endpoint"},
     "graphify_query": {"category": "graph", "icon": "graph", "title": "پرس‌وجو از گراف دانش"},
     "graphify_path": {"category": "graph", "icon": "graph", "title": "ردیابی ارتباط در گراف"},
     "write_feature_file": {"category": "output", "icon": "write", "title": "ذخیره فایل تست Gherkin"},
@@ -56,6 +74,9 @@ TOOL_META: dict[str, dict[str, str]] = {
 _SUBAGENT_LABELS = {
     "outline-researcher": "متخصص مستندات (Outline)",
     "github-researcher": "متخصص کد و PR (GitHub)",
+    "confluence-researcher": "متخصص مستندات (Confluence)",
+    "azure-researcher": "متخصص Azure DevOps (کد/Boards/Wiki)",
+    "openapi-researcher": "متخصص قرارداد API (OpenAPI)",
 }
 
 _COMPLEXITY_LABELS = {
@@ -179,10 +200,18 @@ def _format_tool_input(tool: str, data: dict[str, Any]) -> str:
         "corpus_search_docs",
         "github_search_pull_requests",
         "github_discover_relevant_prs",
+        "confluence_research_bundle",
+        "azure_discover_relevant_prs",
+        "azure_search_work_items",
+        "azure_wiki_search",
+        "openapi_research_bundle",
         "graphify_query",
     ):
         q = data.get("query") or data.get("question") or ""
         return f"جستجو برای {_quote(str(q), 90)}" if q else ""
+
+    if tool == "openapi_get_operation":
+        return _truncate(str(data.get("operation") or ""), 80)
 
     if tool == "outline_get_document":
         title = data.get("title") or ""
@@ -507,6 +536,9 @@ def phase_for_tool(tool: str) -> str:
         "agent": "delegating",
         "outline": "research",
         "github": "research",
+        "confluence": "research",
+        "azure": "research",
+        "openapi": "research",
         "graph": "graph",
         "output": "writing",
         "index": "indexing",

@@ -268,19 +268,23 @@ class EmbeddingClient:
     """OpenAI-compatible /embeddings client; disabled when no model configured."""
 
     def __init__(self, settings: Settings | None = None) -> None:
+        from qa_agent.models.llm import effective_api_key, normalize_openai_base_url
+
         self.settings = settings or get_settings()
         self.model = self.settings.qa_agent_embedding_model.strip()
-        self.base_url = (
+        self.base_url = normalize_openai_base_url(
             self.settings.qa_agent_embedding_base_url.strip()
             or self.settings.llm_base_url.strip()
-        )
-        self.api_key = (
+        ) or ""
+        self.api_key = effective_api_key(
             self.settings.qa_agent_embedding_api_key.strip()
-            or self.settings.llm_api_key.strip()
-        )
+            or self.settings.llm_api_key.strip(),
+            self.base_url,
+        ) or ""
 
     @property
     def enabled(self) -> bool:
+        # Key optional when base_url is a custom/local endpoint.
         return bool(self.model and self.base_url and self.api_key)
 
     def embed_texts(self, texts: list[str]) -> list[list[float]] | None:

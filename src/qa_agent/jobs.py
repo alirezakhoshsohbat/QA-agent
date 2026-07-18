@@ -57,12 +57,21 @@ class JobStore:
         outline_sync: bool,
         github_clone: bool,
         with_graph: bool,
+        confluence_sync: bool = False,
+        azure_clone: bool = False,
+        openapi_sync: bool = False,
     ) -> GenerationJob:
         parts: list[str] = []
         if outline_sync:
             parts.append("Outline")
+        if confluence_sync:
+            parts.append("Confluence")
+        if openapi_sync:
+            parts.append("OpenAPI")
         if github_clone:
             parts.append("GitHub")
+        if azure_clone:
+            parts.append("Azure")
         if with_graph:
             parts.append("Graph")
         query = "Index: " + (", ".join(parts) if parts else "corpus only")
@@ -76,6 +85,9 @@ class JobStore:
                 "outline_sync": outline_sync,
                 "github_clone": github_clone,
                 "with_graph": with_graph,
+                "confluence_sync": confluence_sync,
+                "azure_clone": azure_clone,
+                "openapi_sync": openapi_sync,
             },
         )
         with self._lock:

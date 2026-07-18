@@ -89,6 +89,9 @@ class Settings(BaseSettings):
     # that researcher and the corresponding tools stay available for direct use.
     qa_agent_outline_subagent: bool = True
     qa_agent_github_subagent: bool = True
+    qa_agent_confluence_subagent: bool = True
+    qa_agent_azure_subagent: bool = True
+    qa_agent_openapi_subagent: bool = True
 
     # Outline
     outline_api_key: str = ""
@@ -101,6 +104,46 @@ class Settings(BaseSettings):
     github_repo: str = ""  # fallback if github_repos empty
     github_repo_url: str = ""
     github_default_branch: str = "main"
+
+    # Confluence (Atlassian Cloud) — documentation research source. Auth is
+    # HTTP Basic with the account email + an API token. base_url points at the
+    # wiki root, e.g. https://your-domain.atlassian.net/wiki
+    confluence_base_url: str = ""
+    confluence_email: str = ""
+    confluence_api_token: str = ""
+    confluence_space: str = ""  # optional space key filter, e.g. "QA,ENG"
+    # Auth scheme: "basic" (Atlassian Cloud — email + API token) or "bearer"
+    # (on-prem Confluence Server/Data Center — Personal Access Token). On-prem
+    # servers reject Basic auth with 401 and require a Bearer PAT.
+    confluence_auth_mode: str = "basic"
+
+    # Azure DevOps — code (Repos + Pull Requests), Wiki (docs) and Boards
+    # (work items) research source. Auth is a Personal Access Token used as the
+    # password of HTTP Basic (username left blank).
+    azure_devops_pat: str = ""
+    azure_devops_org: str = ""
+    azure_devops_project: str = ""
+    azure_devops_base_url: str = "https://dev.azure.com"
+    azure_devops_repos: str = ""  # comma-separated repository names in project
+    azure_devops_wiki: str = ""  # optional wiki identifier for docs research
+    azure_devops_default_branch: str = "main"
+    # REST API version. Azure DevOps Cloud accepts 7.1, but on-prem Azure DevOps
+    # Server caps at the version it shipped with (e.g. 7.0 / 6.0). 7.0 is the
+    # safe default that works on both Cloud and recent Server installs.
+    azure_devops_api_version: str = "7.0"
+
+    # OpenAPI / Swagger — API contract research source. Comma-separated list of
+    # spec locations (http(s) URLs or local file paths) pointing at OpenAPI 3 or
+    # Swagger 2 documents in JSON or YAML. The optional bearer token is only used
+    # to fetch spec URLs that sit behind authentication.
+    openapi_specs: str = ""
+    openapi_token: str = ""
+
+    # TLS verification for outbound HTTPS calls to connectors (Outline,
+    # Confluence, Azure DevOps, GitHub, OpenAPI specs). Set to False for
+    # internal / self-signed endpoints whose CA is not trusted by the host
+    # (e.g. https://…​.sadgan.int). Applies to every connector HTTP client.
+    qa_agent_verify_tls: bool = True
 
     # Paths
     qa_agent_output_dir: Path = Path("./output")
@@ -143,6 +186,47 @@ class Settings(BaseSettings):
     def github_repo_url_for(self, repo: str) -> str:
         """Build clone URL for owner/repo."""
         return f"https://github.com/{repo.strip()}.git"
+
+    @property
+    def confluence_spaces_list(self) -> list[str]:
+        return [s.strip() for s in self.confluence_space.split(",") if s.strip()]
+
+    @property
+    def confluence_configured(self) -> bool:
+        return bool(self.confluence_base_url and self.confluence_api_token)
+
+    @property
+    def openapi_specs_list(self) -> list[str]:
+        return [s.strip() for s in self.openapi_specs.split(",") if s.strip()]
+
+    @property
+    def openapi_configured(self) -> bool:
+        return bool(self.openapi_specs_list)
+
+    @property
+    def azure_devops_repos_list(self) -> list[str]:
+        return [r.strip() for r in self.azure_devops_repos.split(",") if r.strip()]
+
+    @property
+    def azure_devops_configured(self) -> bool:
+        return bool(self.azure_devops_pat and self.azure_devops_org and self.azure_devops_project)
+
+    def azure_project_url(self) -> str:
+        """Base URL for the configured org/project REST API."""
+        org = self.azure_devops_org.strip()
+        project = self.azure_devops_project.strip()
+        return f"{self.azure_devops_base_url.rstrip('/')}/{org}/{project}"
+
+    def azure_repo_clone_url_for(self, repo: str) -> str:
+        """HTTPS clone URL for a repository in the configured org/project."""
+        org = self.azure_devops_org.strip()
+        project = self.azure_devops_project.strip()
+        return f"{self.azure_devops_base_url.rstrip('/')}/{org}/{project}/_git/{repo.strip()}"
+
+    @property
+    def httpx_verify(self) -> bool:
+        """Whether outbound connector HTTPS calls should verify TLS certs."""
+        return self.qa_agent_verify_tls
 
     @property
     def cache_dir(self) -> Path:

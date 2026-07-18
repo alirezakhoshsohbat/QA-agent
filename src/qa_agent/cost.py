@@ -62,6 +62,15 @@ class CostTracker:
         """Deprecated — use record_github_call."""
         self.record_github_call()
 
+    def record_confluence_call(self) -> None:
+        self.report.confluence_api_calls += 1
+
+    def record_azure_call(self) -> None:
+        self.report.azure_api_calls += 1
+
+    def record_openapi_call(self) -> None:
+        self.report.openapi_api_calls += 1
+
     def record_graphify_tokens(self, tokens: int) -> None:
         self._graphify_tokens_used += tokens
         self.report.graphify_query_tokens = self._graphify_tokens_used

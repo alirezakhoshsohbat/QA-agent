@@ -53,6 +53,9 @@ class IndexRequest(BaseModel):
     outline_sync: bool = False
     github_clone: bool = False
     with_graph: bool = False
+    confluence_sync: bool = False
+    azure_clone: bool = False
+    openapi_sync: bool = False
 
 
 class PRGenerateRequest(BaseModel):
@@ -100,6 +103,9 @@ def _run_index_job(
     outline_sync: bool,
     github_clone: bool,
     with_graph: bool,
+    confluence_sync: bool = False,
+    azure_clone: bool = False,
+    openapi_sync: bool = False,
 ) -> None:
     settings = _settings()
     try:
@@ -118,6 +124,9 @@ def _run_index_job(
             outline_sync=outline_sync,
             github_clone=github_clone,
             with_graph=with_graph,
+            confluence_sync=confluence_sync,
+            azure_clone=azure_clone,
+            openapi_sync=openapi_sync,
             settings=settings,
             on_activity=on_activity,
         )
@@ -206,7 +215,7 @@ def _run_job(job_id: str) -> None:
 
         missing = validate_model_credentials(settings)
         if missing:
-            raise RuntimeError(f"Missing API keys: {', '.join(missing)}")
+            raise RuntimeError(f"Missing configuration: {', '.join(missing)}")
 
         job_store.update(
             job_id,
@@ -306,7 +315,7 @@ def _run_pr_job(job_id: str, repo: str, number: int) -> None:
 
         missing = validate_model_credentials(settings)
         if missing:
-            raise RuntimeError(f"Missing API keys: {', '.join(missing)}")
+            raise RuntimeError(f"Missing configuration: {', '.join(missing)}")
 
         job_store.update(job_id, phase="research", progress=5, message="تحلیل PR…")
 
@@ -375,6 +384,14 @@ async def api_status() -> dict[str, Any]:
         "outline_configured": bool(settings.outline_api_key),
         "outline_subagent": settings.qa_agent_outline_subagent,
         "github_subagent": settings.qa_agent_github_subagent,
+        "confluence_configured": settings.confluence_configured,
+        "confluence_subagent": settings.qa_agent_confluence_subagent,
+        "azure_configured": settings.azure_devops_configured,
+        "azure_repos": settings.azure_devops_repos_list,
+        "azure_subagent": settings.qa_agent_azure_subagent,
+        "openapi_configured": settings.openapi_configured,
+        "openapi_specs": settings.openapi_specs_list,
+        "openapi_subagent": settings.qa_agent_openapi_subagent,
         "token_budget_default": settings.qa_agent_token_budget,
         "output_dir": str(settings.qa_agent_output_dir),
         "graph": {
@@ -405,6 +422,9 @@ async def api_get_settings() -> dict[str, Any]:
                 "qa_agent_embedding_api_key",
                 "outline_api_key",
                 "github_token",
+                "confluence_api_token",
+                "azure_devops_pat",
+                "openapi_token",
             }
         },
         "secrets_note": (
@@ -412,6 +432,22 @@ async def api_get_settings() -> dict[str, Any]:
             "replaces it. Base URLs and sub-agent toggles apply on the next run."
         ),
     }
+
+
+class ConnectorTestRequest(BaseModel):
+    """Optional unsaved form values to test a connector before persisting."""
+
+    values: dict[str, Any] = Field(default_factory=dict)
+
+
+@app.post("/api/connectors/{name}/test")
+async def api_test_connector(name: str, body: ConnectorTestRequest | None = None) -> dict[str, Any]:
+    from qa_agent.connectors import CONNECTORS, test_connector
+
+    if name not in CONNECTORS:
+        raise HTTPException(status_code=404, detail="Unknown connector")
+    overrides = body.values if body else {}
+    return test_connector(name, overrides)
 
 
 class SettingsUpdate(BaseModel):
@@ -598,6 +634,9 @@ async def api_index(body: IndexRequest) -> dict[str, str]:
         outline_sync=body.outline_sync,
         github_clone=body.github_clone,
         with_graph=body.with_graph,
+        confluence_sync=body.confluence_sync,
+        azure_clone=body.azure_clone,
+        openapi_sync=body.openapi_sync,
     )
     thread = threading.Thread(
         target=_run_index_job,
@@ -606,6 +645,9 @@ async def api_index(body: IndexRequest) -> dict[str, str]:
             "outline_sync": body.outline_sync,
             "github_clone": body.github_clone,
             "with_graph": body.with_graph,
+            "confluence_sync": body.confluence_sync,
+            "azure_clone": body.azure_clone,
+            "openapi_sync": body.openapi_sync,
         },
         daemon=True,
     )

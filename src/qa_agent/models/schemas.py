@@ -48,6 +48,9 @@ class CostReport(BaseModel):
     outline_api_calls: int = 0
     gitlab_api_calls: int = 0  # deprecated alias
     github_api_calls: int = 0
+    confluence_api_calls: int = 0
+    azure_api_calls: int = 0
+    openapi_api_calls: int = 0
     llm_input_tokens: int = 0
     llm_output_tokens: int = 0
     estimated_usd: float = 0.0

@@ -25,6 +25,9 @@ from qa_agent.triage import TriageDecision, triage_request
 from qa_agent.tools.github import create_github_tools
 from qa_agent.tools.graphify import create_graphify_tools
 from qa_agent.tools.outline import create_outline_tools
+from qa_agent.tools.confluence import create_confluence_tools
+from qa_agent.tools.azure_devops import create_azure_tools
+from qa_agent.tools.openapi import create_openapi_tools
 from qa_agent.tools.output import (
     MAX_WRITE_ATTEMPTS,
     create_output_tools,
@@ -51,16 +54,64 @@ def _domain_hint() -> str:
 
 def _orchestrator_context(settings: Settings) -> str:
     repos = ", ".join(settings.github_repos_list) or "(none configured)"
+    azure_repos = ", ".join(settings.azure_devops_repos_list) or "(none configured)"
     outline_sa = "enabled" if settings.qa_agent_outline_subagent else "DISABLED"
     github_sa = "enabled" if settings.qa_agent_github_subagent else "DISABLED"
+    confluence_sa = "enabled" if settings.qa_agent_confluence_subagent else "DISABLED"
+    azure_sa = "enabled" if settings.qa_agent_azure_subagent else "DISABLED"
+    openapi_sa = "enabled" if settings.qa_agent_openapi_subagent else "DISABLED"
     return (
         "\n\n## Run configuration (injected)\n"
-        f"- Configured repositories: {repos}\n"
+        f"- Configured GitHub repositories: {repos}\n"
+        f"- Configured Azure DevOps repositories: {azure_repos}\n"
+        f"- Confluence configured: {'yes' if settings.confluence_configured else 'no'}\n"
+        f"- Azure DevOps configured: {'yes' if settings.azure_devops_configured else 'no'}\n"
+        f"- OpenAPI configured: {'yes' if settings.openapi_configured else 'no'}\n"
         f"- Max documents to read: {settings.qa_agent_max_docs}\n"
         f"- Max PRs to deep-read: {settings.qa_agent_max_prs_deep}\n"
         f"- Graphify token budget: {settings.qa_agent_token_budget}\n"
         f"- Sub-agent outline-researcher: {outline_sa}\n"
         f"- Sub-agent github-researcher: {github_sa}\n"
+        f"- Sub-agent confluence-researcher: {confluence_sa}\n"
+        f"- Sub-agent azure-researcher: {azure_sa}\n"
+        f"- Sub-agent openapi-researcher: {openapi_sa}\n"
+        f"{_domain_hint()}"
+    )
+
+
+def _confluence_context(settings: Settings) -> str:
+    return (
+        "\n\n## Run configuration (injected)\n"
+        f"- Read at most {settings.qa_agent_max_docs} pages total.\n"
+        f"- Confluence {'is configured' if settings.confluence_configured else 'is NOT configured — rely on corpus fallback'}.\n"
+        f"{_domain_hint()}"
+    )
+
+
+def _azure_context(settings: Settings) -> str:
+    repos = settings.azure_devops_repos_list
+    repos_str = ", ".join(repos) or "(none configured)"
+    return (
+        "\n\n## Run configuration (injected)\n"
+        f"- Azure DevOps {'is configured' if settings.azure_devops_configured else 'is NOT configured'}.\n"
+        f"- Configured repositories: {repos_str}\n"
+        f"- Wiki: {settings.azure_devops_wiki or '(none configured)'}\n"
+        f"- Deep-read up to {settings.qa_agent_max_prs_deep} PR(s) with azure_get_pr_changes.\n"
+        "- Research work items (Boards) and wiki for acceptance criteria first, then PRs for code.\n"
+        f"{_domain_hint()}"
+    )
+
+
+def _openapi_context(settings: Settings) -> str:
+    specs = settings.openapi_specs_list
+    specs_str = f"{len(specs)} spec(s) configured" if specs else "(none configured)"
+    return (
+        "\n\n## Run configuration (injected)\n"
+        f"- OpenAPI {'is configured' if settings.openapi_configured else 'is NOT configured'}.\n"
+        f"- Sources: {specs_str}\n"
+        f"- Read at most {settings.qa_agent_max_docs} endpoints total.\n"
+        "- Extract exact wire facts (method, path, auth, params, request/response "
+        "schema, status codes) and derive validation/auth/boundary edge cases.\n"
         f"{_domain_hint()}"
     )
 
@@ -166,6 +217,9 @@ def create_qa_agent(
     outline_tools = create_outline_tools(settings, cost)
     outline_research_tools = create_outline_tools(settings, cost, research_only=True)
     github_tools = create_github_tools(settings, cost)
+    confluence_tools = create_confluence_tools(settings, cost)
+    azure_tools = create_azure_tools(settings, cost)
+    openapi_tools = create_openapi_tools(settings, cost)
     graphify_tools = create_graphify_tools(settings, cost)
     output_tools = create_output_tools(
         settings.qa_agent_output_dir,
@@ -177,6 +231,9 @@ def create_qa_agent(
     orchestrator_prompt = _load_prompt("orchestrator.md") + _orchestrator_context(settings)
     outline_prompt = _load_prompt("outline_researcher.md") + _outline_context(settings)
     github_prompt = _load_prompt("github_researcher.md") + _github_context(settings)
+    confluence_prompt = _load_prompt("confluence_researcher.md") + _confluence_context(settings)
+    azure_prompt = _load_prompt("azure_researcher.md") + _azure_context(settings)
+    openapi_prompt = _load_prompt("openapi_researcher.md") + _openapi_context(settings)
 
     research_model = create_research_model(settings)
     generate_model = create_chat_model(
@@ -222,8 +279,59 @@ def create_qa_agent(
                 "model": research_model,
             }
         )
+    if settings.qa_agent_confluence_subagent and settings.confluence_configured:
+        subagents.append(
+            {
+                "name": "confluence-researcher",
+                "description": (
+                    "Researches Confluence documentation for a feature: runs "
+                    "confluence_research_bundle, reads the top relevant pages, and returns an "
+                    "acceptance checklist plus wire facts. Use when Confluence is configured."
+                ),
+                "system_prompt": confluence_prompt,
+                "tools": confluence_tools,
+                "model": research_model,
+            }
+        )
+    if settings.qa_agent_azure_subagent and settings.azure_devops_configured:
+        subagents.append(
+            {
+                "name": "azure-researcher",
+                "description": (
+                    "Azure DevOps research: reads Boards work items and Wiki for requirements/"
+                    "acceptance criteria, discovers pull requests and reads their changed files "
+                    "for wire-level code evidence. Use when Azure DevOps is configured."
+                ),
+                "system_prompt": azure_prompt,
+                "tools": azure_tools,
+                "model": research_model,
+            }
+        )
+    if settings.qa_agent_openapi_subagent and settings.openapi_configured:
+        subagents.append(
+            {
+                "name": "openapi-researcher",
+                "description": (
+                    "OpenAPI/Swagger contract research: discovers endpoints for a feature, "
+                    "reads their full request/response contracts, and returns wire-level facts "
+                    "(auth, params, schemas, status codes) plus API edge cases. Use when "
+                    "OpenAPI is configured, especially for API/backend test generation."
+                ),
+                "system_prompt": openapi_prompt,
+                "tools": openapi_tools,
+                "model": research_model,
+            }
+        )
 
-    all_tools = outline_tools + github_tools + graphify_tools + output_tools
+    all_tools = (
+        outline_tools
+        + github_tools
+        + confluence_tools
+        + azure_tools
+        + openapi_tools
+        + graphify_tools
+        + output_tools
+    )
 
     agent = create_deep_agent(
         model=generate_model,
@@ -268,11 +376,35 @@ def _build_prompt(query: str, effective_budget: int, settings: Settings | None =
             "related PR diffs when repos are configured."
         )
         step_n += 1
+    if settings.qa_agent_confluence_subagent and settings.confluence_configured:
+        steps.append(
+            f"{step_n}. Delegate to **confluence-researcher** to mine Confluence pages for "
+            "acceptance criteria and wire facts."
+        )
+        step_n += 1
+    if settings.qa_agent_azure_subagent and settings.azure_devops_configured:
+        steps.append(
+            f"{step_n}. Delegate to **azure-researcher** to gather Boards/Wiki requirements and "
+            "read Azure DevOps PR changes for wire-level code evidence."
+        )
+        step_n += 1
+    if settings.qa_agent_openapi_subagent and settings.openapi_configured:
+        steps.append(
+            f"{step_n}. Delegate to **openapi-researcher** to read the API contract "
+            "(endpoints, params, request/response schemas, status codes) and derive "
+            "API validation/auth/boundary edge cases."
+        )
+        step_n += 1
     steps.append(
-        f"{step_n}. Write English Gherkin from docs **and** PR findings: **one Scenario per "
-        "checklist ID** (E-1, B-8, … verbatim — never rename to AC-*), each tagged "
-        "`@acceptance-{ID}` inside a Feature block, with concrete steps including "
-        "endpoints, field names, and sample payloads from the researcher report."
+        f"{step_n}. Write Gherkin from docs **and** PR findings. Cover **every** checklist "
+        "ID (E-1, B-8, … verbatim — never rename to AC-*) with `@acceptance-{ID}` tags, then "
+        "**expand each behavior in depth**: every high-risk criterion gets MULTIPLE scenarios "
+        "(happy + edge + failure + retry + rehydration + race + cross-tab + regression as "
+        "applicable), reusing its `@acceptance-{ID}`. One scenario per ID is NOT enough — aim "
+        "for several scenarios per non-trivial ID. Write the narrative (titles, Given/When/Then "
+        "prose, comments) in the SAME language as the REQUEST above; keep Gherkin keywords, "
+        "tags, endpoints, storage keys, JSON, HTTP verbs, and status codes in English. Include "
+        "the header legend, priority/type tags, and Background required by your system prompt."
     )
     step_n += 1
     steps.append(

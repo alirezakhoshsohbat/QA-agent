@@ -128,7 +128,19 @@ def triage_request(query: str, settings: Settings | None = None) -> TriageDecisi
                 generate_role=_role_for(complexity),
                 source="llm",
             )
-    except Exception:
-        pass
-
-    return heuristic_triage(query)
+        fallback = heuristic_triage(query)
+        return TriageDecision(
+            complexity=fallback.complexity,
+            reason=f"{fallback.reason} (nano reply unparseable)",
+            generate_role=fallback.generate_role,
+            source="heuristic",
+        )
+    except Exception as exc:
+        fallback = heuristic_triage(query)
+        err = str(exc).strip().replace("\n", " ")[:80]
+        return TriageDecision(
+            complexity=fallback.complexity,
+            reason=f"{fallback.reason} (nano failed: {err})" if err else fallback.reason,
+            generate_role=fallback.generate_role,
+            source="heuristic",
+        )
