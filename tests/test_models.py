@@ -154,3 +154,40 @@ def test_validate_custom_local_without_api_key():
         openai_api_key="",
     )
     assert validate_model_credentials(settings) == []
+
+
+def test_agentrouter_header_helpers():
+    from qa_agent.models.llm import (
+        agentrouter_default_headers,
+        is_agentrouter_base_url,
+    )
+
+    assert is_agentrouter_base_url("https://agentrouter.org/v1") is True
+    assert is_agentrouter_base_url("https://openrouter.ai/api/v1") is False
+    headers = agentrouter_default_headers()
+    assert headers["User-Agent"].startswith("QwenCode/")
+    assert headers["X-Stainless-Lang"] == "js"
+
+
+def test_agentrouter_disables_streaming(monkeypatch):
+    """AgentRouter SSE is unreliable; ChatOpenAI must not stream."""
+    captured: dict = {}
+
+    def fake_init_chat_model(**kwargs):
+        captured.update(kwargs)
+        return object()
+
+    from qa_agent.models import llm as llm_mod
+
+    monkeypatch.setattr(llm_mod, "init_chat_model", fake_init_chat_model)
+    settings = Settings(
+        qa_agent_model_profile="router",
+        llm_api_key="sk-test",
+        llm_base_url="https://agentrouter.org/v1",
+        qa_agent_research_model="claude-opus-4-6",
+        qa_agent_generate_model="claude-opus-4-6",
+    )
+    llm_mod.create_chat_model("claude-opus-4-6", settings, role="generate")
+    assert captured.get("disable_streaming") is True
+    assert captured.get("stream_usage") is False
+    assert captured.get("default_headers", {}).get("X-Stainless-Lang") == "js"

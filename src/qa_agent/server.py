@@ -235,13 +235,18 @@ def _run_job(job_id: str) -> None:
         )
         _finalize_generate(job_id, settings, output)
     except Exception as exc:
+        import logging
+        import traceback
+
+        logging.getLogger("qa_agent").exception("generate job %s failed", job_id)
+        detail = f"{exc}\n{traceback.format_exc()}"
         job_store.update(
             job_id,
             status="failed",
             phase="error",
             progress=100,
             message=str(exc)[:500] or "تولید ناموفق بود.",
-            error=str(exc),
+            error=detail[:12000],
         )
 
 
@@ -259,7 +264,15 @@ def _finalize_generate(job_id: str, settings: Settings, output: dict[str, Any]) 
     latest_feature = feature_files[-1] if feature_files else None
     feature_path = str(latest_feature) if latest_feature else None
     meta: dict[str, Any] = {}
-    cost_data: dict[str, Any] = output["cost"].model_dump()
+    cost_obj = output.get("cost")
+    if cost_obj is None:
+        cost_data = {}
+    elif hasattr(cost_obj, "model_dump"):
+        cost_data = cost_obj.model_dump()
+    elif isinstance(cost_obj, dict):
+        cost_data = cost_obj
+    else:
+        cost_data = {}
 
     if latest_feature:
         stem = latest_feature.stem
