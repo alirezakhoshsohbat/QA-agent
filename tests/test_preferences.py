@@ -138,3 +138,6 @@ def test_get_settings_reads_ui_overrides(tmp_path: Path, monkeypatch: pytest.Mon
     assert settings.qa_agent_generate_model == "from-ui"
     assert settings.qa_agent_github_subagent is False
     assert settings.llm_base_url == "https://api.avalai.ir/v1"
+    assert settings.qa_agent_project_id == "default"
+    assert "projects" in str(settings.qa_agent_output_dir).replace("\\", "/")
+    assert (tmp_path / "projects" / "default" / "preferences.json").exists()

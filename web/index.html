@@ -27,6 +27,30 @@
             <div class="brand-tag">Gherkin Test Studio</div>
           </div>
         </div>
+        <span class="header-sep" aria-hidden="true"></span>
+        <div class="project-switcher" id="projectSwitcher">
+          <button type="button" class="project-switcher-btn" id="projectSwitcherBtn" aria-haspopup="dialog" aria-expanded="false" title="مدیریت پروژه">
+            <span class="project-avatar" id="projectAvatar" aria-hidden="true">پ</span>
+            <span class="project-switcher-meta">
+              <span class="project-switcher-label">پروژه فعال</span>
+              <span class="project-switcher-name" id="projectSwitcherName">پیش‌فرض</span>
+            </span>
+            <svg class="project-switcher-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+          <div class="project-switcher-menu hidden" id="projectSwitcherMenu" role="dialog" aria-label="انتخاب پروژه">
+            <div class="project-menu-head">
+              <span class="project-menu-title">پروژه‌ها</span>
+              <span class="project-menu-hint">هر پروژه تنظیمات و دادهٔ جدا دارد</span>
+            </div>
+            <div class="project-switcher-list" id="projectSwitcherList" role="listbox"></div>
+            <div class="project-menu-foot">
+              <button type="button" class="project-switcher-new" id="projectNewBtn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                پروژه جدید
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
       <div class="header-end">
         <div class="status-pill" id="credStatus" title="وضعیت اتصال">
@@ -98,6 +122,10 @@
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
                 Activity
               </button>
+              <button class="tab" data-tab="developer" role="tab">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+                Developer
+              </button>
               <button class="tab" data-tab="sources" role="tab">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
                 Sources
@@ -165,6 +193,47 @@
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
                   </div>
                   <p>با شروع تولید، مراحل زنده‌ی کار Agent اینجا نمایش داده می‌شود.</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Developer -->
+            <div class="panel" id="panel-developer">
+              <div class="dev-console">
+                <div class="dev-toolbar">
+                  <div class="dev-toolbar-meta">
+                    <span class="dev-pill">DEV</span>
+                    <span class="dev-toolbar-title">Console</span>
+                    <span class="dev-count" id="devLogCount">0</span>
+                  </div>
+                  <div class="dev-toolbar-actions">
+                    <label class="dev-filter">
+                      <span class="sr-only">Filter</span>
+                      <select id="devLogFilter" aria-label="فیلتر سطح لاگ">
+                        <option value="all">همه</option>
+                        <option value="debug">Debug+</option>
+                        <option value="info">Info+</option>
+                        <option value="warn">Warn+</option>
+                        <option value="error">Error</option>
+                      </select>
+                    </label>
+                    <button type="button" class="mini-btn" id="devLogCopy" title="کپی لاگ‌ها">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+                      <span class="label">Copy</span>
+                    </button>
+                    <button type="button" class="mini-btn" id="devLogClear" title="پاک کردن نمایش">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
+                      <span class="label">Clear</span>
+                    </button>
+                  </div>
+                </div>
+                <div class="dev-log" id="devLog" role="log" aria-live="polite">
+                  <div class="dev-log-empty">
+                    <div class="dev-log-empty-ic">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+                    </div>
+                    <p>لاگ‌های فنی Agent (tool calls، phase، خطاها) اینجا با فرمت کنسول نمایش داده می‌شود.</p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -323,6 +392,30 @@
     </div>
   </div>
 
+  <!-- Project create / rename / delete modal -->
+  <div class="overlay hidden" id="projectModal">
+    <div class="modal modal--project" role="dialog" aria-labelledby="projectModalTitle" aria-modal="true">
+      <div class="modal-head">
+        <h2 id="projectModalTitle">پروژه جدید</h2>
+        <p id="projectModalLead">نامی انتخاب کنید؛ تنظیمات و داده از پروژه‌های دیگر جدا می‌ماند.</p>
+        <button class="modal-x" id="projectModalClose" aria-label="بستن">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="modal-body" id="projectModalBody">
+        <label class="field field--full" id="projectNameField">
+          <span class="field-label">نام پروژه</span>
+          <input type="text" id="projectNameInput" class="field-input" placeholder="مثلاً ERP بانک" maxlength="120" autocomplete="off" />
+        </label>
+        <p class="project-modal-warn hidden" id="projectModalWarn"></p>
+      </div>
+      <div class="modal-foot">
+        <button class="btn-ghost" id="projectModalCancel">انصراف</button>
+        <button class="btn-primary" id="projectModalConfirm">ایجاد</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Settings modal -->
   <div class="overlay hidden" id="settingsModal">
     <div class="modal modal--wide modal--settings" role="dialog" aria-labelledby="settingsModalTitle" aria-modal="true">
@@ -332,7 +425,7 @@
         </span>
         <div class="modal-head-text">
           <h2 id="settingsModalTitle">تنظیمات Agent</h2>
-          <p>هر کانکتور را جداگانه تنظیم کن — کلید خالی یعنی نگه‌داشتن مقدار فعلی</p>
+          <p id="settingsModalLead">هر کانکتور را جداگانه تنظیم کن — کلید خالی یعنی نگه‌داشتن مقدار فعلی</p>
         </div>
         <button class="modal-x" id="settingsModalClose" aria-label="بستن">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
@@ -696,6 +789,14 @@
         <section class="settings-section">
           <h3 class="settings-section-title">پایداری تا جواب درست</h3>
           <div class="settings-grid settings-grid--3">
+            <label class="field">
+              <span class="field-label">LLM RPM <small>سقف درخواست/دقیقه — ۰ = بدون محدودیت</small></span>
+              <input type="number" id="set_llm_rpm" class="field-input" min="0" max="600" />
+            </label>
+            <label class="field">
+              <span class="field-label">LLM retries <small>تلاش مجدد روی ۴۲۹ / ۵xx</small></span>
+              <input type="number" id="set_llm_max_retries" class="field-input" min="0" max="12" />
+            </label>
             <label class="field">
               <span class="field-label">Write attempts</span>
               <input type="number" id="set_max_write_attempts" class="field-input" min="1" max="12" />

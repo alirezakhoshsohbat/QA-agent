@@ -191,3 +191,54 @@ def test_agentrouter_disables_streaming(monkeypatch):
     assert captured.get("disable_streaming") is True
     assert captured.get("stream_usage") is False
     assert captured.get("default_headers", {}).get("X-Stainless-Lang") == "js"
+
+
+def test_shared_rate_limiter_attached(monkeypatch):
+    captured: dict = {}
+
+    def fake_init_chat_model(**kwargs):
+        captured.update(kwargs)
+        return object()
+
+    from qa_agent.models import llm as llm_mod
+
+    llm_mod.reset_shared_rate_limiter()
+    monkeypatch.setattr(llm_mod, "init_chat_model", fake_init_chat_model)
+    settings = Settings(
+        qa_agent_model_profile="router",
+        llm_api_key="sk-test",
+        llm_base_url="https://router.example/v1",
+        qa_agent_research_model="kimi",
+        qa_agent_generate_model="gpt",
+        qa_agent_llm_rpm=18,
+    )
+    llm_mod.create_chat_model("gpt", settings, role="generate")
+    assert captured.get("rate_limiter") is not None
+    first = captured["rate_limiter"]
+    captured.clear()
+    llm_mod.create_chat_model("kimi", settings, role="research")
+    assert captured.get("rate_limiter") is first
+
+
+def test_rate_limiter_disabled_when_rpm_zero(monkeypatch):
+    captured: dict = {}
+
+    def fake_init_chat_model(**kwargs):
+        captured.update(kwargs)
+        return object()
+
+    from qa_agent.models import llm as llm_mod
+
+    llm_mod.reset_shared_rate_limiter()
+    monkeypatch.setattr(llm_mod, "init_chat_model", fake_init_chat_model)
+    settings = Settings(
+        qa_agent_model_profile="router",
+        llm_api_key="sk-test",
+        llm_base_url="https://router.example/v1",
+        qa_agent_research_model="kimi",
+        qa_agent_generate_model="gpt",
+        qa_agent_llm_rpm=0,
+    )
+    llm_mod.create_chat_model("gpt", settings, role="generate")
+    assert "rate_limiter" not in captured
+

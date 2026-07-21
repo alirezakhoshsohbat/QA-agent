@@ -1,8 +1,9 @@
 """UI-managed preferences that override .env defaults.
 
-Operational knobs, credentials, and sub-agent toggles are editable from the
-Web Settings panel and persisted under ``.cache/ui_preferences.json``. Values
-here take precedence over ``.env`` when present.
+Operational knobs, credentials, and connector toggles are editable from the
+Web Settings panel and persisted per-project under
+``projects/<id>/preferences.json``. Values here take precedence over ``.env``
+when present.
 """
 
 from __future__ import annotations
@@ -51,7 +52,7 @@ UI_MANAGED_FIELDS: tuple[str, ...] = (
     "qa_agent_query_expansion",
     "qa_agent_triage",
     "qa_agent_escalation",
-    # Sub-agents
+    # Connectors (enable = tools + researcher + indexing)
     "qa_agent_outline_subagent",
     "qa_agent_github_subagent",
     "qa_agent_confluence_subagent",
@@ -69,6 +70,8 @@ UI_MANAGED_FIELDS: tuple[str, ...] = (
     "qa_agent_max_docs",
     "qa_agent_max_diff_lines",
     "qa_agent_recursion_limit",
+    "qa_agent_llm_rpm",
+    "qa_agent_llm_max_retries",
 )
 
 SECRET_FIELDS = frozenset(
@@ -124,6 +127,8 @@ _INT_FIELDS = frozenset(
         "qa_agent_max_docs",
         "qa_agent_max_diff_lines",
         "qa_agent_recursion_limit",
+        "qa_agent_llm_rpm",
+        "qa_agent_llm_max_retries",
     }
 )
 
@@ -138,11 +143,15 @@ _FIELD_BOUNDS: dict[str, tuple[int, int]] = {
     "qa_agent_max_docs": (1, 20),
     "qa_agent_max_diff_lines": (50, 5000),
     "qa_agent_recursion_limit": (10, 120),
+    "qa_agent_llm_rpm": (0, 600),
+    "qa_agent_llm_max_retries": (0, 12),
 }
 
 
-def preferences_path() -> Path:
-    return Path(".cache") / "ui_preferences.json"
+def preferences_path(project_id: str | None = None) -> Path:
+    from qa_agent.projects import preferences_path_for
+
+    return preferences_path_for(project_id)
 
 
 def mask_secret(value: str) -> str:
@@ -167,8 +176,8 @@ def is_secret_unchanged(raw: Any, current: str) -> bool:
     return text == mask_secret(current)
 
 
-def load_preferences() -> dict[str, Any]:
-    path = preferences_path()
+def load_preferences(project_id: str | None = None) -> dict[str, Any]:
+    path = preferences_path(project_id)
     if not path.exists():
         return {}
     try:
@@ -184,13 +193,14 @@ def save_preferences(
     updates: dict[str, Any],
     *,
     current_settings: Any | None = None,
+    project_id: str | None = None,
 ) -> dict[str, Any]:
     """Merge ``updates`` into the on-disk preference file and return the result.
 
     Secret fields left blank (or sent as the masked display value) keep their
     previously saved / env value and are not overwritten with empty strings.
     """
-    current = load_preferences()
+    current = load_preferences(project_id)
     cleaned = sanitize_preferences(updates)
 
     for key in SECRET_FIELDS:
@@ -210,7 +220,7 @@ def save_preferences(
             current.pop(key, None)
 
     current.update(cleaned)
-    path = preferences_path()
+    path = preferences_path(project_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(current, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
@@ -253,13 +263,13 @@ def _as_bool(value: Any) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
-def apply_preferences(settings: Any) -> Any:
+def apply_preferences(settings: Any, project_id: str | None = None) -> Any:
     """Return a copy of ``settings`` with UI preferences overlaid.
 
     Empty strings for model/URL override fields are ignored so they cannot
     wipe Settings defaults (e.g. blank Research model → keep .env default).
     """
-    prefs = load_preferences()
+    prefs = load_preferences(project_id)
     if not prefs:
         return settings
     update = {

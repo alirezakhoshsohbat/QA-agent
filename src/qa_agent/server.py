@@ -30,6 +30,42 @@ from qa_agent.tools.output import (
 WEB_DIR = Path(__file__).resolve().parents[2] / "web"
 STATIC_DIR = WEB_DIR / "static"
 
+
+def _user_facing_error(exc: BaseException, *, fallback: str) -> str:
+    """Short Persian/English UI message; keep gateways' raw dump out of the toast."""
+    text = str(exc) or ""
+    lowered = text.lower()
+    if (
+        "429" in text
+        or "rate limit" in lowered
+        or "rate_limit" in lowered
+        or "请求数限制" in text
+        or "too many requests" in lowered
+    ):
+        return (
+            "سقف درخواست LLM پر شد (۴۲۹). یک دقیقه صبر کنید و دوباره بزنید. "
+            "در Settings → پایداری، LLM RPM را حدود ۱۸ نگه دارید (۰ = بدون محدودیت)."
+        )
+    if "content-blocked" in lowered or "content_blocked" in lowered:
+        return (
+            "گیت‌وی LLM این درخواست را مسدود کرد (content-blocked) — معمولاً "
+            "به‌خاطر محتوای PR/مستندات در مرحله research. "
+            "مدل research را عوض کنید، کانکتورهای غیرضروری را خاموش کنید، "
+            "یا کوئری را کوتاه‌تر/عمومی‌تر بزنید و دوباره تلاش کنید."
+        )
+    if (
+        "new_api_panic" in lowered
+        or "panic detected" in lowered
+        or ("error code: 500" in lowered and "new-api" in lowered)
+        or ("error code: 500" in lowered and "openaierror" in lowered)
+    ):
+        return (
+            "گیت‌وی LLM دچار خطای داخلی شد (500 / new-api panic) — مشکل از سمت پروکسی است، "
+            "نه از QA Agent. چند لحظه صبر کنید و دوباره بزنید؛ اگر تکرار شد مدل یا "
+            "base URL دیگری امتحان کنید."
+        )
+    return (text[:500] if text else fallback)
+
 app = FastAPI(title="QA Agent", version="0.1.0", docs_url="/api/docs", redoc_url=None)
 
 app.add_middleware(
@@ -64,15 +100,29 @@ class PRGenerateRequest(BaseModel):
     budget: int = Field(default=1500, ge=200, le=8000)
 
 
-def _settings() -> Settings:
-    return get_settings()
+def _settings(project_id: str | None = None) -> Settings:
+    return get_settings(project_id)
+
+
+def _active_project_id() -> str:
+    from qa_agent.projects import get_active_project_id
+
+    return get_active_project_id()
 
 
 def _emit_activity(job_id: str, activity: dict[str, Any]) -> None:
     from qa_agent.activity import activity_from_event
 
     if activity.get("type") == "partial_gherkin":
-        job_store.set_partial_gherkin(job_id, activity.get("gherkin", ""))
+        gherkin = activity.get("gherkin", "")
+        job_store.set_partial_gherkin(job_id, gherkin)
+        job_store.append_log(
+            job_id,
+            f"partial_gherkin ({len(gherkin)} chars)",
+            level="debug",
+            source="agent",
+            data={"preview": gherkin[:400]},
+        )
         return
 
     # Triage / escalation / other non-tool events → normalize to a timeline card.
@@ -80,6 +130,7 @@ def _emit_activity(job_id: str, activity: dict[str, Any]) -> None:
         card = activity_from_event(activity)
         if card:
             job_store.append_activity(job_id, card)
+            _log_activity(job_id, card, raw=activity)
         return
 
     phase = activity.get("phase")
@@ -88,6 +139,7 @@ def _emit_activity(job_id: str, activity: dict[str, Any]) -> None:
             phase if phase and phase not in {"start", "end"} else activity.get("phase", "running")
         )
         job_store.append_activity(job_id, activity)
+        _log_activity(job_id, activity)
     elif activity.get("status") == "done" or activity.get("phase") == "end":
         job_store.complete_activity(
             job_id,
@@ -95,6 +147,49 @@ def _emit_activity(job_id: str, activity: dict[str, Any]) -> None:
             result_preview=activity.get("result_preview", ""),
             detail=activity.get("detail", ""),
         )
+        _log_activity(job_id, activity)
+
+
+def _log_activity(
+    job_id: str,
+    activity: dict[str, Any],
+    *,
+    raw: dict[str, Any] | None = None,
+) -> None:
+    """Mirror activity cards into the developer console with technical detail."""
+    tool = activity.get("tool") or activity.get("type") or "event"
+    status = activity.get("status") or "info"
+    title = activity.get("title") or tool
+    level = "debug" if status == "done" else "info"
+    if status == "running":
+        arrow = "▶"
+        level = "info"
+    elif status == "done":
+        arrow = "◀"
+        level = "debug"
+    else:
+        arrow = "·"
+
+    payload: dict[str, Any] = {
+        "tool": tool,
+        "status": status,
+        "phase": activity.get("phase"),
+        "category": activity.get("category"),
+        "detail": activity.get("detail") or "",
+        "result_preview": activity.get("result_preview") or "",
+    }
+    if raw:
+        for key in ("complexity", "generate_role", "reason", "source", "type"):
+            if key in raw and raw[key] not in (None, ""):
+                payload[key] = raw[key]
+
+    job_store.append_log(
+        job_id,
+        f"{arrow} {title}",
+        level=level,
+        source=str(activity.get("category") or "tool"),
+        data=payload,
+    )
 
 
 def _run_index_job(
@@ -107,7 +202,8 @@ def _run_index_job(
     azure_clone: bool = False,
     openapi_sync: bool = False,
 ) -> None:
-    settings = _settings()
+    job = job_store.get(job_id)
+    settings = _settings(job.project_id if job and job.project_id else None)
     try:
         job_store.update(
             job_id,
@@ -115,6 +211,21 @@ def _run_index_job(
             phase="init",
             progress=5,
             message="شروع ایندکس…",
+        )
+        job_store.append_log(
+            job_id,
+            "index job started",
+            level="info",
+            source="job",
+            data={
+                "outline_sync": outline_sync,
+                "github_clone": github_clone,
+                "with_graph": with_graph,
+                "confluence_sync": confluence_sync,
+                "azure_clone": azure_clone,
+                "openapi_sync": openapi_sync,
+                "project_id": job.project_id if job else "",
+            },
         )
 
         def on_activity(activity: dict[str, Any]) -> None:
@@ -130,6 +241,13 @@ def _run_index_job(
             settings=settings,
             on_activity=on_activity,
         )
+        job_store.append_log(
+            job_id,
+            "index job completed",
+            level="info",
+            source="job",
+            data=result,
+        )
         job_store.update(
             job_id,
             status="completed",
@@ -139,6 +257,17 @@ def _run_index_job(
             result=result,
         )
     except Exception as exc:
+        import logging
+        import traceback
+
+        logging.getLogger("qa_agent").exception("index job %s failed", job_id)
+        job_store.append_log(
+            job_id,
+            f"index job failed: {exc}",
+            level="error",
+            source="job",
+            data=traceback.format_exc(),
+        )
         job_store.update(
             job_id,
             status="failed",
@@ -154,7 +283,7 @@ def _run_job(job_id: str) -> None:
     if not job:
         return
 
-    settings = _settings()
+    settings = _settings(job.project_id or None)
 
     try:
         job_store.update(
@@ -164,22 +293,33 @@ def _run_job(job_id: str) -> None:
             progress=5,
             message="آماده‌سازی Agent…",
         )
+        job_store.append_log(
+            job_id,
+            "generate job started",
+            level="info",
+            source="job",
+            data={
+                "query": job.query,
+                "budget": job.budget,
+                "dry_run": job.dry_run,
+                "project_id": job.project_id,
+            },
+        )
 
         if job.dry_run:
-            job_store.append_activity(
-                job_id,
-                {
-                    "id": "dry1",
-                    "tool": "write_feature_file",
-                    "category": "output",
-                    "icon": "write",
-                    "title": "نوشتن template آزمایشی",
-                    "detail": job.query,
-                    "status": "running",
-                    "phase": "writing",
-                    "timestamp": time.time(),
-                },
-            )
+            dry_activity = {
+                "id": "dry1",
+                "tool": "write_feature_file",
+                "category": "output",
+                "icon": "write",
+                "title": "نوشتن template آزمایشی",
+                "detail": job.query,
+                "status": "running",
+                "phase": "writing",
+                "timestamp": time.time(),
+            }
+            job_store.append_activity(job_id, dry_activity)
+            _log_activity(job_id, dry_activity)
             cost = CostTracker(budget=job.budget)
             template = DRY_RUN_TEMPLATE.format(query=job.query.replace('"', '\\"'))
             feature = GeneratedFeature(slug=slugify(job.query), feature_content=template, query=job.query)
@@ -188,11 +328,24 @@ def _run_job(job_id: str) -> None:
             meta = json.loads(paths["meta"].read_text(encoding="utf-8"))
             cost_data = json.loads(paths["cost"].read_text(encoding="utf-8"))
             job_store.set_partial_gherkin(job_id, gherkin)
+            done_activity = {
+                **dry_activity,
+                "status": "done",
+                "result_preview": "فایل .feature ذخیره شد",
+            }
             job_store.complete_activity(
                 job_id,
                 "write_feature_file",
                 result_preview="فایل .feature ذخیره شد",
                 detail=job.query,
+            )
+            _log_activity(job_id, done_activity)
+            job_store.append_log(
+                job_id,
+                "dry-run completed",
+                level="info",
+                source="job",
+                data={"feature_path": str(paths["feature"]), "cost": cost_data},
             )
             job_store.update(
                 job_id,
@@ -240,12 +393,19 @@ def _run_job(job_id: str) -> None:
 
         logging.getLogger("qa_agent").exception("generate job %s failed", job_id)
         detail = f"{exc}\n{traceback.format_exc()}"
+        job_store.append_log(
+            job_id,
+            f"generate job failed: {exc}",
+            level="error",
+            source="job",
+            data=detail,
+        )
         job_store.update(
             job_id,
             status="failed",
             phase="error",
             progress=100,
-            message=str(exc)[:500] or "تولید ناموفق بود.",
+            message=_user_facing_error(exc, fallback="تولید ناموفق بود."),
             error=detail[:12000],
         )
 
@@ -297,6 +457,20 @@ def _finalize_generate(job_id: str, settings: Settings, output: dict[str, Any]) 
         else "تست‌کیس‌های Gherkin آماده‌اند."
     )
 
+    job_store.append_log(
+        job_id,
+        "generate job completed" if not (write_blocked and not latest_feature) else "generate job blocked",
+        level="warn" if write_blocked and not latest_feature else "info",
+        source="job",
+        data={
+            "feature_path": feature_path,
+            "write_blocked": write_blocked,
+            "write_attempt": write_attempt,
+            "validation_errors": validation_errors,
+            "gherkin_chars": len(gherkin or ""),
+            "cost": cost_data,
+        },
+    )
     job_store.update(
         job_id,
         status="completed",
@@ -320,9 +494,9 @@ def _finalize_generate(job_id: str, settings: Settings, output: dict[str, Any]) 
 
 
 def _run_pr_job(job_id: str, repo: str, number: int) -> None:
-    settings = _settings()
+    job = job_store.get(job_id)
+    settings = _settings(job.project_id if job and job.project_id else None)
     try:
-        job = job_store.get(job_id)
         budget = job.budget if job else settings.qa_agent_token_budget
         job_store.update(job_id, status="running", phase="init", progress=5, message="دریافت PR…")
 
@@ -344,12 +518,23 @@ def _run_pr_job(job_id: str, repo: str, number: int) -> None:
         )
         _finalize_generate(job_id, settings, output)
     except Exception as exc:
+        import logging
+        import traceback
+
+        logging.getLogger("qa_agent").exception("pr job %s failed", job_id)
+        job_store.append_log(
+            job_id,
+            f"pr job failed: {exc}",
+            level="error",
+            source="job",
+            data=traceback.format_exc(),
+        )
         job_store.update(
             job_id,
             status="failed",
             phase="error",
             progress=100,
-            message=str(exc)[:500] or "تولید از PR ناموفق بود.",
+            message=_user_facing_error(exc, fallback="تولید از PR ناموفق بود."),
             error=str(exc),
         )
 
@@ -364,6 +549,8 @@ async def index_page() -> FileResponse:
 
 @app.get("/api/status")
 async def api_status() -> dict[str, Any]:
+    from qa_agent.projects import get_project
+
     settings = _settings()
     missing = validate_model_credentials(settings)
     research = describe_model_endpoint(settings, "research")
@@ -382,8 +569,17 @@ async def api_status() -> dict[str, Any]:
         except (json.JSONDecodeError, OSError):
             graph_note = "Graph file unreadable"
 
+    project_name = ""
+    if settings.qa_agent_project_id:
+        try:
+            project_name = get_project(settings.qa_agent_project_id).name
+        except KeyError:
+            project_name = settings.qa_agent_project_id
+
     return {
         "profile": settings.qa_agent_model_profile,
+        "project_id": settings.qa_agent_project_id,
+        "project_name": project_name,
         "research_model": settings.active_research_model(),
         "generate_model": settings.active_generate_model(),
         "nano_model": nano["model"],
@@ -423,13 +619,17 @@ async def api_get_settings() -> dict[str, Any]:
     a value is configured.
     """
     from qa_agent.preferences import load_preferences, preferences_snapshot
+    from qa_agent.projects import get_project
 
     settings = _settings()
+    project = get_project(settings.qa_agent_project_id or None)
     return {
+        "project_id": project.id,
+        "project_name": project.name,
         "values": preferences_snapshot(settings),
         "overrides": {
             k: v
-            for k, v in load_preferences().items()
+            for k, v in load_preferences(project.id).items()
             if k not in {
                 "llm_api_key",
                 "qa_agent_embedding_api_key",
@@ -442,7 +642,7 @@ async def api_get_settings() -> dict[str, Any]:
         },
         "secrets_note": (
             "Leave a secret blank to keep the current value. Typing a new key "
-            "replaces it. Base URLs and sub-agent toggles apply on the next run."
+            "replaces it. Base URLs and connector toggles apply on the next run."
         ),
     }
 
@@ -479,12 +679,86 @@ async def api_put_settings(body: SettingsUpdate) -> dict[str, Any]:
     if not body.values:
         raise HTTPException(status_code=400, detail="No settings provided")
     settings = _settings()
-    save_preferences(body.values, current_settings=settings)
-    settings = _settings()
+    project_id = settings.qa_agent_project_id or _active_project_id()
+    save_preferences(body.values, current_settings=settings, project_id=project_id)
+    settings = _settings(project_id)
     return {
         "ok": True,
+        "project_id": project_id,
         "values": preferences_snapshot(settings),
     }
+
+
+class ProjectCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+
+
+class ProjectRename(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+
+
+@app.get("/api/projects")
+async def api_list_projects() -> dict[str, Any]:
+    from qa_agent.projects import get_active_project_id, list_projects
+
+    active = get_active_project_id()
+    projects = [
+        {**p.to_dict(), "active": p.id == active}
+        for p in list_projects()
+    ]
+    return {"active_id": active, "projects": projects}
+
+
+@app.post("/api/projects")
+async def api_create_project(body: ProjectCreate) -> dict[str, Any]:
+    from qa_agent.projects import activate_project, create_project
+
+    try:
+        project = create_project(body.name.strip())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    activate_project(project.id)
+    return {"ok": True, "project": {**project.to_dict(), "active": True}}
+
+
+@app.post("/api/projects/{project_id}/activate")
+async def api_activate_project(project_id: str) -> dict[str, Any]:
+    from qa_agent.projects import activate_project
+
+    try:
+        project = activate_project(project_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"ok": True, "project": {**project.to_dict(), "active": True}}
+
+
+@app.patch("/api/projects/{project_id}")
+async def api_rename_project(project_id: str, body: ProjectRename) -> dict[str, Any]:
+    from qa_agent.projects import get_active_project_id, rename_project
+
+    try:
+        project = rename_project(project_id, body.name.strip())
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "ok": True,
+        "project": {**project.to_dict(), "active": project.id == get_active_project_id()},
+    }
+
+
+@app.delete("/api/projects/{project_id}")
+async def api_delete_project(project_id: str) -> dict[str, Any]:
+    from qa_agent.projects import delete_project
+
+    try:
+        delete_project(project_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True}
 
 
 @app.get("/api/runs")
@@ -564,7 +838,13 @@ async def api_generate(body: GenerateRequest) -> dict[str, str]:
     if not query:
         raise HTTPException(status_code=400, detail="Query is required")
 
-    job = job_store.create(query=query, budget=body.budget, dry_run=body.dry_run)
+    project_id = _active_project_id()
+    job = job_store.create(
+        query=query,
+        budget=body.budget,
+        dry_run=body.dry_run,
+        project_id=project_id,
+    )
     thread = threading.Thread(target=_run_job, args=(job.id,), daemon=True)
     thread.start()
     return {"job_id": job.id}
@@ -572,7 +852,12 @@ async def api_generate(body: GenerateRequest) -> dict[str, str]:
 
 @app.post("/api/generate/pr")
 async def api_generate_pr(body: PRGenerateRequest) -> dict[str, str]:
-    job = job_store.create(query=f"PR {body.repo}#{body.number}", budget=body.budget)
+    project_id = _active_project_id()
+    job = job_store.create(
+        query=f"PR {body.repo}#{body.number}",
+        budget=body.budget,
+        project_id=project_id,
+    )
     thread = threading.Thread(
         target=_run_pr_job,
         args=(job.id, body.repo.strip(), body.number),
@@ -643,6 +928,7 @@ async def api_job_stream(job_id: str) -> StreamingResponse:
 
 @app.post("/api/index")
 async def api_index(body: IndexRequest) -> dict[str, str]:
+    project_id = _active_project_id()
     job = job_store.create_index(
         outline_sync=body.outline_sync,
         github_clone=body.github_clone,
@@ -650,6 +936,7 @@ async def api_index(body: IndexRequest) -> dict[str, str]:
         confluence_sync=body.confluence_sync,
         azure_clone=body.azure_clone,
         openapi_sync=body.openapi_sync,
+        project_id=project_id,
     )
     thread = threading.Thread(
         target=_run_index_job,

@@ -1,12 +1,46 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from threading import Lock
 from typing import Any
 
 from langchain.chat_models import init_chat_model
 from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.rate_limiters import InMemoryRateLimiter
 
 from qa_agent.config import Settings, get_settings
+
+# One bucket for every chat-model role in this process so parallel sub-agents
+# cannot collectively exceed the gateway RPM.
+_rate_limiter_lock = Lock()
+_shared_rate_limiter: InMemoryRateLimiter | None = None
+_shared_rate_limiter_rpm: int | None = None
+
+
+def get_shared_rate_limiter(settings: Settings) -> InMemoryRateLimiter | None:
+    """Shared token-bucket limiter, or None when ``qa_agent_llm_rpm`` is 0."""
+    global _shared_rate_limiter, _shared_rate_limiter_rpm
+    rpm = int(settings.qa_agent_llm_rpm or 0)
+    if rpm <= 0:
+        return None
+    with _rate_limiter_lock:
+        if _shared_rate_limiter is None or _shared_rate_limiter_rpm != rpm:
+            _shared_rate_limiter = InMemoryRateLimiter(
+                requests_per_second=rpm / 60.0,
+                check_every_n_seconds=0.05,
+                # No burst: strict gateways count every completion call.
+                max_bucket_size=1,
+            )
+            _shared_rate_limiter_rpm = rpm
+        return _shared_rate_limiter
+
+
+def reset_shared_rate_limiter() -> None:
+    """Test helper — drop the process-wide limiter so RPM can be reconfigured."""
+    global _shared_rate_limiter, _shared_rate_limiter_rpm
+    with _rate_limiter_lock:
+        _shared_rate_limiter = None
+        _shared_rate_limiter_rpm = None
 
 
 @dataclass(frozen=True)
@@ -240,6 +274,9 @@ def create_chat_model(
             # tracking works on the SSE/astream_events path (OpenAI-compatible).
             "stream_usage": True,
         }
+        rate_limiter = get_shared_rate_limiter(settings)
+        if rate_limiter is not None:
+            kwargs["rate_limiter"] = rate_limiter
         if is_agentrouter_base_url(base_url):
             # AgentRouter's SSE stream occasionally yields null chunks; LangChain
             # then crashes with ``NoneType.model_dump``. Non-stream completions
@@ -276,6 +313,9 @@ def create_chat_model(
     }
     if effective_base_url:
         kwargs["base_url"] = effective_base_url
+    rate_limiter = get_shared_rate_limiter(settings)
+    if rate_limiter is not None:
+        kwargs["rate_limiter"] = rate_limiter
 
     # Only OpenAI-compatible models support stream_options.include_usage; other
     # providers reject the kwarg, so scope it to the openai provider.

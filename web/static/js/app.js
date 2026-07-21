@@ -11,6 +11,8 @@
   let activeEventSource = null;
   let activeJobKind = "generate";
   let lastActivitySig = "";
+  let lastDevLogSig = "";
+  let currentDevLogs = [];
   let allRuns = [];
   let lastStatus = null;
 
@@ -140,6 +142,10 @@
       ? "Credentials OK"
       : `کمبود: ${data.missing_credentials.join(", ")}`;
 
+    if (data.project_name || data.project_id) {
+      updateProjectChrome(data.project_name || data.project_id, data.project_id || "");
+    }
+
     $("#modelStats").innerHTML = `
       <div class="row"><span class="k">Profile</span><span class="v mono">${escapeHtml(data.profile)}</span></div>
       <div class="row"><span class="k">Nano</span><span class="v mono">${escapeHtml(data.nano_model || "—")}</span></div>
@@ -156,12 +162,18 @@
       : `<span class="badge warn">${data.graph.note ? "placeholder" : "empty"}</span>`;
 
     const azureRepos = data.azure_repos || [];
+    const connBadge = (enabled, connected, okLabel, warnLabel) => {
+      if (!enabled) return '<span class="badge warn">خاموش</span>';
+      return connected
+        ? `<span class="badge ok">${okLabel}</span>`
+        : `<span class="badge warn">${warnLabel || "not set"}</span>`;
+    };
     $("#integrationStats").innerHTML = `
-      <div class="integ-item"><span class="name">GitHub</span>${data.github_repos.length ? `<span class="badge ok">${data.github_repos.length} repos</span>` : '<span class="badge warn">none</span>'}</div>
-      <div class="integ-item"><span class="name">Outline</span>${data.outline_configured ? '<span class="badge ok">connected</span>' : '<span class="badge warn">not set</span>'}</div>
-      <div class="integ-item"><span class="name">Confluence</span>${data.confluence_configured ? '<span class="badge ok">connected</span>' : '<span class="badge warn">not set</span>'}</div>
-      <div class="integ-item"><span class="name">Azure</span>${data.azure_configured ? `<span class="badge ok">${azureRepos.length || "connected"}${azureRepos.length ? " repos" : ""}</span>` : '<span class="badge warn">not set</span>'}</div>
-      <div class="integ-item"><span class="name">OpenAPI</span>${data.openapi_configured ? `<span class="badge ok">${(data.openapi_specs || []).length || "connected"}${(data.openapi_specs || []).length ? " specs" : ""}</span>` : '<span class="badge warn">not set</span>'}</div>
+      <div class="integ-item"><span class="name">GitHub</span>${connBadge(data.github_subagent !== false, !!data.github_repos.length, `${data.github_repos.length} repos`, "none")}</div>
+      <div class="integ-item"><span class="name">Outline</span>${connBadge(data.outline_subagent !== false, !!data.outline_configured, "connected")}</div>
+      <div class="integ-item"><span class="name">Confluence</span>${connBadge(data.confluence_subagent !== false, !!data.confluence_configured, "connected")}</div>
+      <div class="integ-item"><span class="name">Azure</span>${connBadge(data.azure_subagent !== false, !!data.azure_configured, `${azureRepos.length || "connected"}${azureRepos.length ? " repos" : ""}`)}</div>
+      <div class="integ-item"><span class="name">OpenAPI</span>${connBadge(data.openapi_subagent !== false, !!data.openapi_configured, `${(data.openapi_specs || []).length || "connected"}${(data.openapi_specs || []).length ? " specs" : ""}`)}</div>
       <div class="integ-item"><span class="name">Graph</span>${graphBadge}</div>`;
 
     renderConnectorBadges(data);
@@ -175,10 +187,24 @@
     openapi: (d) => d.openapi_configured,
   };
 
+  const CONNECTOR_ENABLED = {
+    outline: (d) => d.outline_subagent !== false,
+    confluence: (d) => d.confluence_subagent !== false,
+    github: (d) => d.github_subagent !== false,
+    azure: (d) => d.azure_subagent !== false,
+    openapi: (d) => d.openapi_subagent !== false,
+  };
+
   function renderConnectorBadges(data) {
     Object.entries(CONNECTOR_STATE).forEach(([conn, isOn]) => {
       const badge = document.querySelector(`[data-conn-status="${conn}"]`);
       if (!badge) return;
+      const enabled = (CONNECTOR_ENABLED[conn] || (() => true))(data);
+      if (!enabled) {
+        badge.className = "connector-status off";
+        badge.textContent = "خاموش";
+        return;
+      }
       const on = !!isOn(data);
       badge.className = "connector-status " + (on ? "ok" : "off");
       badge.textContent = on ? "متصل" : "تنظیم نشده";
@@ -501,6 +527,118 @@
     $("#activityLog").innerHTML = activityEmptyHtml(idleMessage);
   }
 
+  // ── Developer console ─────────────────────────────────────────────
+
+  const DEV_LEVEL_RANK = { debug: 0, info: 1, warn: 2, error: 3 };
+
+  function formatDevTime(ts) {
+    const d = new Date((Number(ts) || 0) * 1000);
+    if (Number.isNaN(d.getTime())) return "--:--:--.---";
+    const pad = (n, w = 2) => String(n).padStart(w, "0");
+    return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}`;
+  }
+
+  function formatDevData(data) {
+    if (data == null || data === "") return "";
+    if (typeof data === "string") return data;
+    try {
+      return JSON.stringify(data, null, 2);
+    } catch {
+      return String(data);
+    }
+  }
+
+  function logsToPlainText(logs) {
+    return (logs || []).map((entry) => {
+      const head = `${formatDevTime(entry.ts)}  ${(entry.level || "info").toUpperCase().padEnd(5)}  [${entry.source || "job"}]  ${entry.message || ""}`;
+      const body = formatDevData(entry.data);
+      return body ? `${head}\n${body}` : head;
+    }).join("\n\n");
+  }
+
+  function filterDevLogs(logs) {
+    const min = $("#devLogFilter")?.value || "all";
+    if (min === "all") return logs;
+    const floor = DEV_LEVEL_RANK[min] ?? 0;
+    return logs.filter((e) => (DEV_LEVEL_RANK[e.level] ?? 1) >= floor);
+  }
+
+  function devLogEmptyHtml() {
+    return `
+      <div class="dev-log-empty">
+        <div class="dev-log-empty-ic">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+        </div>
+        <p>لاگ‌های فنی Agent (tool calls، phase، خطاها) اینجا با فرمت کنسول نمایش داده می‌شود.</p>
+      </div>`;
+  }
+
+  function devLineHtml(entry) {
+    const level = entry.level || "info";
+    const dataText = formatDevData(entry.data);
+    return `
+      <div class="dev-line is-${escapeHtml(level)}" data-id="${escapeHtml(entry.id || "")}">
+        <span class="dev-ts">${escapeHtml(formatDevTime(entry.ts))}</span>
+        <span class="dev-level ${escapeHtml(level)}">${escapeHtml(level)}</span>
+        <span class="dev-source" title="${escapeHtml(entry.source || "job")}">${escapeHtml(entry.source || "job")}</span>
+        <div class="dev-body">
+          <div class="dev-msg">${escapeHtml(entry.message || "")}</div>
+          ${dataText ? `<pre class="dev-data">${escapeHtml(dataText)}</pre>` : ""}
+        </div>
+      </div>`;
+  }
+
+  function renderDevLogs(logs) {
+    currentDevLogs = Array.isArray(logs) ? logs : [];
+    const el = $("#devLog");
+    const count = $("#devLogCount");
+    if (count) count.textContent = String(currentDevLogs.length);
+
+    const visible = filterDevLogs(currentDevLogs);
+    if (!visible.length) {
+      el.innerHTML = currentDevLogs.length
+        ? `<div class="dev-log-empty"><p>هیچ لاگی با این فیلتر نیست.</p></div>`
+        : devLogEmptyHtml();
+      return;
+    }
+
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    el.innerHTML = visible.map(devLineHtml).join("");
+    if (nearBottom || el.dataset.stick !== "0") {
+      el.scrollTop = el.scrollHeight;
+    }
+  }
+
+  function clearDevLogs() {
+    lastDevLogSig = "";
+    currentDevLogs = [];
+    renderDevLogs([]);
+  }
+
+  function initDevConsole() {
+    const filter = $("#devLogFilter");
+    if (filter) {
+      filter.addEventListener("change", () => renderDevLogs(currentDevLogs));
+    }
+    $("#devLogCopy")?.addEventListener("click", async () => {
+      const text = logsToPlainText(filterDevLogs(currentDevLogs));
+      if (!text) {
+        toast("لاگی برای کپی نیست", "error");
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(text);
+        toast("لاگ‌ها کپی شدند");
+      } catch {
+        toast("کپی ناموفق بود", "error");
+      }
+    });
+    $("#devLogClear")?.addEventListener("click", () => {
+      clearDevLogs();
+      toast("نمایش لاگ پاک شد");
+    });
+  }
+
   function displayIndexResult(result) {
     if (!result) return;
     const req = result.requested || {};
@@ -587,6 +725,13 @@
       lastActivitySig = sig;
       renderActivities(activities);
     }
+
+    const logs = job.logs || [];
+    const logSig = JSON.stringify(logs);
+    if (logSig !== lastDevLogSig) {
+      lastDevLogSig = logSig;
+      renderDevLogs(logs);
+    }
     if (job.partial_gherkin) showPartialGherkin(job.partial_gherkin);
   }
 
@@ -627,6 +772,7 @@
     $("#progressCard").classList.remove("hidden");
     activeJobKind = "generate";
     clearActivities();
+    clearDevLogs();
     switchToTab("activity");
 
     try {
@@ -721,7 +867,29 @@
 
   // ── Index modal ──────────────────────────────────────────────────────────
 
+  const INDEX_CONN_CHECKS = [
+    { id: "idxOutline", enabledKey: "outline_subagent" },
+    { id: "idxConfluence", enabledKey: "confluence_subagent" },
+    { id: "idxGithub", enabledKey: "github_subagent" },
+    { id: "idxAzure", enabledKey: "azure_subagent" },
+    { id: "idxOpenapi", enabledKey: "openapi_subagent" },
+  ];
+
+  function syncIndexConnectorChecks() {
+    const data = lastStatus || {};
+    INDEX_CONN_CHECKS.forEach(({ id, enabledKey }) => {
+      const el = $("#" + id);
+      if (!el) return;
+      const label = el.closest("label.check");
+      const on = data[enabledKey] !== false;
+      el.disabled = !on;
+      if (!on) el.checked = false;
+      if (label) label.classList.toggle("check--disabled", !on);
+    });
+  }
+
   function openIndexModal() {
+    syncIndexConnectorChecks();
     $("#indexModal").classList.remove("hidden");
     $("#indexResult").classList.add("hidden");
   }
@@ -736,6 +904,7 @@
     $("#progressCard").classList.remove("hidden");
     activeJobKind = "index";
     clearActivities("ایندکس در حال اجراست…");
+    clearDevLogs();
     switchToTab("activity");
 
     try {
@@ -786,6 +955,8 @@
     renderGherkin("");
     $("#validationRibbon").classList.add("hidden");
     $("#gherkinBadge").classList.add("hidden");
+    clearActivities("با شروع تولید، مراحل زنده‌ی کار Agent اینجا نمایش داده می‌شود.");
+    clearDevLogs();
     switchToTab("gherkin");
     renderRuns();
     closeRail();
@@ -837,6 +1008,8 @@
     set_max_write_attempts: "qa_agent_max_write_attempts",
     set_max_reprompts: "qa_agent_max_reprompts",
     set_quality_refine_rounds: "qa_agent_quality_refine_rounds",
+    set_llm_rpm: "qa_agent_llm_rpm",
+    set_llm_max_retries: "qa_agent_llm_max_retries",
     set_token_budget: "qa_agent_token_budget",
     set_max_docs: "qa_agent_max_docs",
     set_max_prs_deep: "qa_agent_max_prs_deep",
@@ -867,7 +1040,280 @@
     "openapi_token",
   ]);
 
+  // ── Projects ─────────────────────────────────────────────────────────────
+
+  let projectsCache = [];
+  let activeProjectId = "";
+  let projectModalMode = "create"; // create | rename | delete
+  let projectModalTargetId = "";
+
+  const ICON_EDIT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>';
+  const ICON_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg>';
+
+  function projectInitial(name) {
+    const text = (name || "پ").trim();
+    return text.charAt(0).toUpperCase();
+  }
+
+  function updateProjectChrome(name, id) {
+    const label = name || id || "پروژه";
+    const nameEl = $("#projectSwitcherName");
+    const avatar = $("#projectAvatar");
+    if (nameEl) nameEl.textContent = label;
+    if (avatar) avatar.textContent = projectInitial(label);
+    if (id) activeProjectId = id;
+    const title = $("#settingsModalTitle");
+    if (title) title.textContent = `تنظیمات — ${label}`;
+    const lead = $("#settingsModalLead");
+    if (lead) {
+      lead.textContent =
+        `تنظیمات این پروژه (${label}) — کانکتور، مدل و رفتار مستقل از پروژه‌های دیگر`;
+    }
+  }
+
+  function closeProjectMenu() {
+    const menu = $("#projectSwitcherMenu");
+    const btn = $("#projectSwitcherBtn");
+    if (menu) menu.classList.add("hidden");
+    if (btn) btn.setAttribute("aria-expanded", "false");
+  }
+
+  function toggleProjectMenu() {
+    const menu = $("#projectSwitcherMenu");
+    const btn = $("#projectSwitcherBtn");
+    if (!menu || !btn) return;
+    const open = menu.classList.contains("hidden");
+    menu.classList.toggle("hidden", !open);
+    btn.setAttribute("aria-expanded", open ? "true" : "false");
+    if (open) renderProjectMenu();
+  }
+
+  function renderProjectMenu() {
+    const list = $("#projectSwitcherList");
+    if (!list) return;
+    const canDelete = projectsCache.length > 1;
+    list.innerHTML = projectsCache
+      .map((p) => {
+        const active = p.id === activeProjectId || p.active;
+        const name = p.name || p.id;
+        return `<div class="project-row${active ? " is-active" : ""}" data-project-row="${escapeHtml(p.id)}">
+          <button type="button" class="project-switcher-item" data-project-id="${escapeHtml(p.id)}" role="option" aria-selected="${active}">
+            <span class="project-item-avatar">${escapeHtml(projectInitial(name))}</span>
+            <span class="project-item-text">
+              <span class="project-item-name">${escapeHtml(name)}</span>
+              <span class="project-item-id">${escapeHtml(p.id)}</span>
+            </span>
+            ${active ? '<span class="project-item-badge">فعال</span>' : ""}
+          </button>
+          <div class="project-row-actions">
+            <button type="button" class="project-act" data-project-rename="${escapeHtml(p.id)}" title="تغییر نام" aria-label="تغییر نام">${ICON_EDIT}</button>
+            <button type="button" class="project-act project-act--danger" data-project-delete="${escapeHtml(p.id)}" title="حذف" aria-label="حذف" ${!canDelete || active ? "disabled" : ""}>${ICON_TRASH}</button>
+          </div>
+        </div>`;
+      })
+      .join("");
+
+    list.querySelectorAll("[data-project-id]").forEach((btn) => {
+      btn.addEventListener("click", () => activateProject(btn.dataset.projectId));
+    });
+    list.querySelectorAll("[data-project-rename]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openProjectModal("rename", btn.dataset.projectRename);
+      });
+    });
+    list.querySelectorAll("[data-project-delete]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (btn.disabled) return;
+        openProjectModal("delete", btn.dataset.projectDelete);
+      });
+    });
+  }
+
+  async function loadProjects() {
+    try {
+      const data = await api("/api/projects");
+      projectsCache = data.projects || [];
+      activeProjectId = data.active_id || "";
+      const active = projectsCache.find((p) => p.id === activeProjectId) || projectsCache[0];
+      if (active) updateProjectChrome(active.name, active.id);
+      renderProjectMenu();
+    } catch (_) {
+      /* status load will still show something */
+    }
+  }
+
+  async function refreshAfterProjectChange() {
+    await loadProjects();
+    await loadStatus();
+    await loadRuns();
+    currentGherkin = "";
+    currentRunId = null;
+    renderGherkin("");
+  }
+
+  async function activateProject(projectId) {
+    if (!projectId || projectId === activeProjectId) {
+      closeProjectMenu();
+      return;
+    }
+    try {
+      await api(`/api/projects/${encodeURIComponent(projectId)}/activate`, {
+        method: "POST",
+        body: "{}",
+      });
+      closeProjectMenu();
+      toast("پروژه فعال شد");
+      await refreshAfterProjectChange();
+    } catch (e) {
+      toast(e.message || "تعویض پروژه ناموفق بود", "error");
+    }
+  }
+
+  function openProjectModal(mode, projectId) {
+    closeProjectMenu();
+    projectModalMode = mode;
+    projectModalTargetId = projectId || "";
+    const project = projectsCache.find((p) => p.id === projectId);
+    const title = $("#projectModalTitle");
+    const lead = $("#projectModalLead");
+    const warn = $("#projectModalWarn");
+    const nameField = $("#projectNameField");
+    const input = $("#projectNameInput");
+    const confirm = $("#projectModalConfirm");
+
+    warn.classList.add("hidden");
+    warn.textContent = "";
+    confirm.classList.remove("btn--danger");
+
+    if (mode === "create") {
+      title.textContent = "پروژه جدید";
+      lead.textContent = "نامی انتخاب کنید؛ تنظیمات و داده از پروژه‌های دیگر جدا می‌ماند.";
+      nameField.hidden = false;
+      input.value = "";
+      confirm.textContent = "ایجاد و فعال‌سازی";
+    } else if (mode === "rename") {
+      title.textContent = "تغییر نام پروژه";
+      lead.textContent = `شناسه ثابت می‌ماند: ${project ? project.id : projectId}`;
+      nameField.hidden = false;
+      input.value = project ? project.name : "";
+      confirm.textContent = "ذخیره نام";
+    } else {
+      title.textContent = "حذف پروژه";
+      lead.textContent = "این عمل برگشت‌پذیر نیست.";
+      nameField.hidden = true;
+      warn.classList.remove("hidden");
+      warn.textContent = `پروژه «${project ? project.name : projectId}» با تمام تنظیمات، corpus و خروجی‌ها حذف می‌شود.`;
+      confirm.textContent = "حذف قطعی";
+      confirm.classList.add("btn--danger");
+    }
+
+    $("#projectModal").classList.remove("hidden");
+    if (mode !== "delete") {
+      setTimeout(() => {
+        input.focus();
+        input.select();
+      }, 30);
+    }
+  }
+
+  function closeProjectModal() {
+    $("#projectModal").classList.add("hidden");
+    projectModalTargetId = "";
+  }
+
+  async function confirmProjectModal() {
+    const confirm = $("#projectModalConfirm");
+    const input = $("#projectNameInput");
+    const name = (input.value || "").trim();
+    confirm.disabled = true;
+    try {
+      if (projectModalMode === "create") {
+        if (!name) {
+          toast("نام پروژه را وارد کنید", "error");
+          return;
+        }
+        await api("/api/projects", {
+          method: "POST",
+          body: JSON.stringify({ name }),
+        });
+        toast("پروژه ساخته شد");
+        closeProjectModal();
+        await refreshAfterProjectChange();
+      } else if (projectModalMode === "rename") {
+        if (!name) {
+          toast("نام پروژه را وارد کنید", "error");
+          return;
+        }
+        await api(`/api/projects/${encodeURIComponent(projectModalTargetId)}`, {
+          method: "PATCH",
+          body: JSON.stringify({ name }),
+        });
+        toast("نام پروژه به‌روز شد");
+        closeProjectModal();
+        await loadProjects();
+        await loadStatus();
+      } else if (projectModalMode === "delete") {
+        await api(`/api/projects/${encodeURIComponent(projectModalTargetId)}`, {
+          method: "DELETE",
+        });
+        toast("پروژه حذف شد");
+        closeProjectModal();
+        await loadProjects();
+      }
+    } catch (e) {
+      toast(e.message || "عملیات پروژه ناموفق بود", "error");
+    } finally {
+      confirm.disabled = false;
+    }
+  }
+
+  function initProjectSwitcher() {
+    const btn = $("#projectSwitcherBtn");
+    const neu = $("#projectNewBtn");
+    if (btn) {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        toggleProjectMenu();
+      });
+    }
+    if (neu) {
+      neu.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openProjectModal("create");
+      });
+    }
+    document.addEventListener("click", (e) => {
+      const root = $("#projectSwitcher");
+      if (root && !root.contains(e.target)) closeProjectMenu();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape") return;
+      if (!$("#projectModal").classList.contains("hidden")) closeProjectModal();
+      else closeProjectMenu();
+    });
+
+    $("#projectModalClose").addEventListener("click", closeProjectModal);
+    $("#projectModalCancel").addEventListener("click", closeProjectModal);
+    $("#projectModalConfirm").addEventListener("click", confirmProjectModal);
+    $("#projectModal").addEventListener("click", (e) => {
+      if (e.target === $("#projectModal")) closeProjectModal();
+    });
+    $("#projectNameInput").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") confirmProjectModal();
+    });
+  }
+
   function openSettingsModal() {
+    const name =
+      (lastStatus && (lastStatus.project_name || lastStatus.project_id)) ||
+      activeProjectId ||
+      "پروژه";
+    updateProjectChrome(
+      (lastStatus && lastStatus.project_name) || name,
+      (lastStatus && lastStatus.project_id) || activeProjectId
+    );
     $("#settingsModal").classList.remove("hidden");
     loadSettingsForm();
   }
@@ -1074,7 +1520,10 @@
     initTheme();
     initTabs();
     initSettingsTabs();
+    initDevConsole();
     initConnectorMarketplace();
+    initProjectSwitcher();
+    loadProjects();
     loadStatus();
     loadRuns();
     renderGherkin("");

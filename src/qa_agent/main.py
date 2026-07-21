@@ -27,10 +27,17 @@ app = typer.Typer(
 console = Console()
 
 
+def _settings_for(project: Optional[str] = None):
+    """Load settings for ``project`` id, or the active project when omitted."""
+    return get_settings(project)
+
+
 @app.command()
-def models() -> None:
+def models(
+    project: Optional[str] = typer.Option(None, "--project", help="Project id (default: active)"),
+) -> None:
     """Show active model profile, resolved models, and base URLs."""
-    settings = get_settings()
+    settings = _settings_for(project)
     missing = validate_model_credentials(settings)
 
     research = describe_model_endpoint(settings, "research")
@@ -83,9 +90,10 @@ def index(
         "--with-graph",
         help="Build graphify knowledge graph (slow — 100+ docs can take 10+ min)",
     ),
+    project: Optional[str] = typer.Option(None, "--project", help="Project id (default: active)"),
 ) -> None:
     """Build or update the knowledge graph index from Outline docs and GitHub code."""
-    settings = get_settings()
+    settings = _settings_for(project)
     console.print("[bold]Indexing corpus...[/bold]")
 
     if not outline_sync and not github_clone and not with_graph:
@@ -115,9 +123,10 @@ def generate(
     budget: int = typer.Option(1500, "--budget", help="Token budget for graphify query"),
     output_dir: Optional[Path] = typer.Option(None, "--output-dir", help="Output directory"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Generate without LLM (template only)"),
+    project: Optional[str] = typer.Option(None, "--project", help="Project id (default: active)"),
 ) -> None:
     """Generate Gherkin test cases from Outline docs and GitHub PRs."""
-    settings = get_settings()
+    settings = _settings_for(project)
     if output_dir:
         settings.qa_agent_output_dir = output_dir
 
@@ -214,9 +223,10 @@ def from_pr(
     number: int = typer.Argument(..., help="Pull request number"),
     budget: int = typer.Option(1500, "--budget", help="Token budget for graphify query"),
     output_dir: Optional[Path] = typer.Option(None, "--output-dir", help="Output directory"),
+    project: Optional[str] = typer.Option(None, "--project", help="Project id (default: active)"),
 ) -> None:
     """Generate Gherkin test cases directly from a specific GitHub pull request."""
-    settings = get_settings()
+    settings = _settings_for(project)
     if output_dir:
         settings.qa_agent_output_dir = output_dir
     settings.qa_agent_output_dir.mkdir(parents=True, exist_ok=True)
@@ -375,6 +385,9 @@ def serve(
     """Start the web UI server."""
     import uvicorn
 
+    from qa_agent.projects import ensure_projects
+
+    ensure_projects()
     console.print(Panel(
         f"Web UI: [link=http://{host}:{port}]http://{host}:{port}[/link]\n"
         f"API docs: http://{host}:{port}/api/docs",

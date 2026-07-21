@@ -71,6 +71,11 @@ class Settings(BaseSettings):
     # 5xx). Important on rate-limited free tiers where a multi-agent run bursts
     # many calls; 0 disables retries.
     qa_agent_llm_max_retries: int = 5
+    # Cap LLM chat calls across the whole process (orchestrator + all
+    # researchers share one bucket). Many OpenAI-compatible gateways
+    # (AvalAI / NewAPI, etc.) enforce ~20 requests/minute; default 18 stays
+    # under that. Set 0 to disable throttling.
+    qa_agent_llm_rpm: int = 18
 
     # Persistence — how hard the agent works before giving up on a run. The agent
     # keeps re-deciding and self-correcting until it lands a clean, fully-covered
@@ -85,8 +90,8 @@ class Settings(BaseSettings):
     # covered", not merely "parses". 0 disables quality refinement.
     qa_agent_quality_refine_rounds: int = 2
 
-    # Sub-agents — toggle from Web UI. When disabled, the orchestrator skips
-    # that researcher and the corresponding tools stay available for direct use.
+    # Connector enable toggles (Web UI). When disabled, that connector is fully
+    # off — no researcher sub-agent, no tools, and no indexing sync.
     qa_agent_outline_subagent: bool = True
     qa_agent_github_subagent: bool = True
     qa_agent_confluence_subagent: bool = True
@@ -145,10 +150,12 @@ class Settings(BaseSettings):
     # (e.g. https://…​.sadgan.int). Applies to every connector HTTP client.
     qa_agent_verify_tls: bool = True
 
-    # Paths
+    # Paths — overridden per active project by get_settings()
     qa_agent_output_dir: Path = Path("./output")
     qa_agent_corpus_dir: Path = Path("./corpus")
     qa_agent_graphify_out: Path = Path("./graphify-out")
+    qa_agent_project_id: str = ""
+    qa_agent_project_root: Path = Path(".")
 
     # Domain profile — path to a JSON file that replaces the built-in
     # (search-pane example) domain vocabulary/contract rules. Empty = built-in.
@@ -230,6 +237,9 @@ class Settings(BaseSettings):
 
     @property
     def cache_dir(self) -> Path:
+        root = self.qa_agent_project_root
+        if root and str(root) not in {".", ""}:
+            return Path(root) / ".cache"
         return Path(".cache")
 
     @staticmethod
@@ -285,13 +295,17 @@ class Settings(BaseSettings):
         return resolve_model_ref(self, "generate")
 
 
-def get_settings() -> Settings:
-    """Load settings from .env, then overlay UI preferences when present.
+def get_settings(project_id: str | None = None) -> Settings:
+    """Load settings from .env, overlay project preferences, and scope paths.
 
-    Secrets and infra stay in ``.env``. Operational knobs (models, persistence,
-    triage, research budgets) can be overridden from the Web Settings panel via
-    ``.cache/ui_preferences.json``.
+    Secrets and infra seed from ``.env``. Per-project UI preferences live in
+    ``projects/<id>/preferences.json``. Corpus, output, cache, and graphify
+    directories are always under the project root.
     """
     from qa_agent.preferences import apply_preferences
+    from qa_agent.projects import apply_project_paths, ensure_projects, get_project
 
-    return apply_preferences(Settings())
+    ensure_projects()
+    project = get_project(project_id)
+    settings = apply_preferences(Settings(), project_id=project.id)
+    return apply_project_paths(settings, project)

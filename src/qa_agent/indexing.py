@@ -330,6 +330,13 @@ def run_index(
 ) -> dict:
     settings = settings or get_settings()
 
+    # Hard-disable: ignore sync flags for connectors that are turned off.
+    outline_sync = outline_sync and getattr(settings, "qa_agent_outline_subagent", True)
+    github_clone = github_clone and getattr(settings, "qa_agent_github_subagent", True)
+    confluence_sync = confluence_sync and getattr(settings, "qa_agent_confluence_subagent", True)
+    azure_clone = azure_clone and getattr(settings, "qa_agent_azure_subagent", True)
+    openapi_sync = openapi_sync and getattr(settings, "qa_agent_openapi_subagent", True)
+
     result: dict = {"docs_synced": 0, "code_dirs": [], "graph_built": False, "graph_skipped": not with_graph}
 
     _emit_start(on_activity, "index_prepare", str(settings.qa_agent_corpus_dir))

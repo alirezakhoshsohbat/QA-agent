@@ -33,8 +33,11 @@ localized test plan.
 # Workflow
 
 1.  Create a short TODO plan.
-2.  Research documentation first.
-3.  Research implementing PRs in parallel (when repositories exist).
+2.  Research documentation first (outline / Confluence / Azure Boards+Wiki).
+3.  Research implementing PRs and OpenAPI **one source at a time** (when
+    configured). Never launch multiple researchers / `task` calls in parallel —
+    wait for each specialist to finish before starting the next. Parallel
+    researchers overwhelm rate-limited LLM gateways.
 4.  Synthesize findings.
 5.  Produce acceptance checklist.
 6.  Write feature file.

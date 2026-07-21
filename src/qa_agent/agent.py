@@ -70,11 +70,11 @@ def _orchestrator_context(settings: Settings) -> str:
         f"- Max documents to read: {settings.qa_agent_max_docs}\n"
         f"- Max PRs to deep-read: {settings.qa_agent_max_prs_deep}\n"
         f"- Graphify token budget: {settings.qa_agent_token_budget}\n"
-        f"- Sub-agent outline-researcher: {outline_sa}\n"
-        f"- Sub-agent github-researcher: {github_sa}\n"
-        f"- Sub-agent confluence-researcher: {confluence_sa}\n"
-        f"- Sub-agent azure-researcher: {azure_sa}\n"
-        f"- Sub-agent openapi-researcher: {openapi_sa}\n"
+        f"- Connector outline: {outline_sa}\n"
+        f"- Connector github: {github_sa}\n"
+        f"- Connector confluence: {confluence_sa}\n"
+        f"- Connector azure: {azure_sa}\n"
+        f"- Connector openapi: {openapi_sa}\n"
         f"{_domain_hint()}"
     )
 
@@ -214,12 +214,20 @@ def create_qa_agent(
     settings = settings or get_settings()
     cost = cost or CostTracker(budget=settings.qa_agent_token_budget)
 
-    outline_tools = create_outline_tools(settings, cost)
-    outline_research_tools = create_outline_tools(settings, cost, research_only=True)
-    github_tools = create_github_tools(settings, cost)
-    confluence_tools = create_confluence_tools(settings, cost)
-    azure_tools = create_azure_tools(settings, cost)
-    openapi_tools = create_openapi_tools(settings, cost)
+    outline_on = settings.qa_agent_outline_subagent
+    github_on = settings.qa_agent_github_subagent
+    confluence_on = settings.qa_agent_confluence_subagent and settings.confluence_configured
+    azure_on = settings.qa_agent_azure_subagent and settings.azure_devops_configured
+    openapi_on = settings.qa_agent_openapi_subagent and settings.openapi_configured
+
+    outline_tools = create_outline_tools(settings, cost) if outline_on else []
+    outline_research_tools = (
+        create_outline_tools(settings, cost, research_only=True) if outline_on else []
+    )
+    github_tools = create_github_tools(settings, cost) if github_on else []
+    confluence_tools = create_confluence_tools(settings, cost) if confluence_on else []
+    azure_tools = create_azure_tools(settings, cost) if azure_on else []
+    openapi_tools = create_openapi_tools(settings, cost) if openapi_on else []
     graphify_tools = create_graphify_tools(settings, cost)
     output_tools = create_output_tools(
         settings.qa_agent_output_dir,
@@ -229,11 +237,6 @@ def create_qa_agent(
     )
 
     orchestrator_prompt = _load_prompt("orchestrator.md") + _orchestrator_context(settings)
-    outline_prompt = _load_prompt("outline_researcher.md") + _outline_context(settings)
-    github_prompt = _load_prompt("github_researcher.md") + _github_context(settings)
-    confluence_prompt = _load_prompt("confluence_researcher.md") + _confluence_context(settings)
-    azure_prompt = _load_prompt("azure_researcher.md") + _azure_context(settings)
-    openapi_prompt = _load_prompt("openapi_researcher.md") + _openapi_context(settings)
 
     research_model = create_research_model(settings)
     generate_model = create_chat_model(
@@ -250,7 +253,8 @@ def create_qa_agent(
     })
 
     subagents: list[dict[str, Any]] = []
-    if settings.qa_agent_outline_subagent:
+    if outline_on:
+        outline_prompt = _load_prompt("outline_researcher.md") + _outline_context(settings)
         subagents.append(
             {
                 "name": "outline-researcher",
@@ -265,7 +269,8 @@ def create_qa_agent(
                 "model": research_model,
             }
         )
-    if settings.qa_agent_github_subagent:
+    if github_on:
+        github_prompt = _load_prompt("github_researcher.md") + _github_context(settings)
         subagents.append(
             {
                 "name": "github-researcher",
@@ -279,7 +284,10 @@ def create_qa_agent(
                 "model": research_model,
             }
         )
-    if settings.qa_agent_confluence_subagent and settings.confluence_configured:
+    if confluence_on:
+        confluence_prompt = (
+            _load_prompt("confluence_researcher.md") + _confluence_context(settings)
+        )
         subagents.append(
             {
                 "name": "confluence-researcher",
@@ -293,7 +301,8 @@ def create_qa_agent(
                 "model": research_model,
             }
         )
-    if settings.qa_agent_azure_subagent and settings.azure_devops_configured:
+    if azure_on:
+        azure_prompt = _load_prompt("azure_researcher.md") + _azure_context(settings)
         subagents.append(
             {
                 "name": "azure-researcher",
@@ -307,7 +316,8 @@ def create_qa_agent(
                 "model": research_model,
             }
         )
-    if settings.qa_agent_openapi_subagent and settings.openapi_configured:
+    if openapi_on:
+        openapi_prompt = _load_prompt("openapi_researcher.md") + _openapi_context(settings)
         subagents.append(
             {
                 "name": "openapi-researcher",
@@ -324,13 +334,13 @@ def create_qa_agent(
         )
 
     all_tools = (
-        outline_tools
-        + github_tools
-        + confluence_tools
-        + azure_tools
-        + openapi_tools
-        + graphify_tools
-        + output_tools
+        list(outline_tools)
+        + list(github_tools)
+        + list(confluence_tools)
+        + list(azure_tools)
+        + list(openapi_tools)
+        + list(graphify_tools)
+        + list(output_tools)
     )
 
     agent = create_deep_agent(
@@ -357,23 +367,11 @@ def _build_prompt(query: str, effective_budget: int, settings: Settings | None =
             "checklist and wire facts for this feature."
         )
         step_n += 1
-    else:
-        steps.append(
-            f"{step_n}. Research docs yourself with Outline/corpus tools (outline-researcher "
-            "is disabled) and build the acceptance checklist."
-        )
-        step_n += 1
     if settings.qa_agent_github_subagent:
         steps.append(
             f"{step_n}. Delegate to **github-researcher** when repos are configured (short "
             "feature name). It must read PR **diffs** and return wire-level findings — "
             "not titles only."
-        )
-        step_n += 1
-    elif settings.github_repos_list:
-        steps.append(
-            f"{step_n}. Use GitHub tools directly (github-researcher is disabled) to read "
-            "related PR diffs when repos are configured."
         )
         step_n += 1
     if settings.qa_agent_confluence_subagent and settings.confluence_configured:
@@ -427,6 +425,10 @@ not a small merged subset.
 Do not loop on research: each tool call must add new information, and you must
 proceed to writing as soon as the criteria are testable. Optional graphify
 queries share a token budget of {effective_budget}.
+
+CRITICAL: Delegate to at most ONE researcher sub-agent at a time. Wait for its
+result before starting the next. Never fan out Azure + OpenAPI + Confluence (or
+any other pair) in parallel.
 """
 
 
